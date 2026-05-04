@@ -1,0 +1,19 @@
+node_modules/
+output/
+logs/
+*.log
+.DS_Store
+products/*/components/_shared/.cache
+remotion/src/compositions/*
+!remotion/src/compositions/.gitkeep
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# pnpm
+.pnpm-store/
