@@ -75,7 +75,14 @@ WebSearch / WebFetch で以下を軽く確認（合計 5〜10 分以内）：
 #### 対話モード時のユーザー確認（R12）
 
 計画を箇条書きで提示してユーザーに承認を求める。修正要求があれば反映。
-headless モード（`claude -p`）ではこの確認をスキップする。
+
+**ただし以下に該当する場合は確認をスキップして自律実行する**：
+
+- プロンプトに `headless` / `自律実行` / `承認不要` / `auto` / `そのまま生成` 等の語がある
+- 「最後まで」「停止せず」「全自動で」等の連続実行指示がある
+- `claude -p` の 1 ターン実行と推察される文脈（プロンプトが完結していて対話前提でない）
+
+`claude -p` は 1 ターン応答型なので、確認待ちにすると途中終了する。判断に迷う場合は計画を簡潔に提示しつつ**そのまま生成ループに入る**。
 
 ### Step 4. 各動画の生成ループ
 
@@ -217,12 +224,17 @@ R に書かれた禁則に加えて：
 ```bash
 cd /path/to/adcraft && \
   unset ANTHROPIC_API_KEY && \
-  claude -p "create-advertisement skill で全商品の動画を生成して" \
-    --permission-mode acceptEdits \
+  claude -p "create-advertisement skill で全商品の動画を生成して。承認不要、最後まで自律実行して。" \
+    --permission-mode bypassPermissions \
     --max-turns 200 \
-    --output-format stream-json \
+    --output-format stream-json --verbose \
     >> logs/$(date +%Y%m%d-%H%M%S).log 2>&1
 ```
+
+**ヘッドレス実行で詰まらないためのポイント**：
+- `bypassPermissions` を使う（`acceptEdits` だと `pnpm exec remotion still` 等の Bash で止まる）
+- プロンプトに「承認不要、自律実行して」等を含める（R12 のユーザー確認をスキップさせる）
+- `--output-format stream-json --verbose` で無音状態を回避
 
 ## エラーハンドリング
 

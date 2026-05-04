@@ -59,10 +59,16 @@ Claude が以下のフローを実行します：
 
 ```bash
 unset ANTHROPIC_API_KEY  # サブスク利用時に必要
-claude -p "create-advertisement skill で examples/product-sample のリール動画を 1 本生成して" \
-  --permission-mode acceptEdits \
-  --max-turns 200
+claude -p "create-advertisement skill で examples/product-sample のリール動画を 1 本生成して。承認不要、最後まで自律実行して。" \
+  --permission-mode bypassPermissions \
+  --max-turns 200 \
+  --output-format stream-json --verbose
 ```
+
+**重要**：
+- `bypassPermissions` を使うこと（`acceptEdits` だと Bash 権限で止まる）
+- 「承認不要、最後まで自律実行して」をプロンプトに含めること（含めないと計画提示で turn 終了）
+- `stream-json --verbose` で進捗を可視化（初回は Chromium DL で 5〜10 分かかる）
 
 ## 4. 出力の確認
 
@@ -117,3 +123,11 @@ unset ANTHROPIC_API_KEY
 
 - `config.yaml.validation.max_iteration` を増やす（デフォルト 3）
 - それでも解消しない場合は `output/<product>/<date>/issues.json` を確認
+
+### `claude -p` で計画提示の段階で終了してしまう
+
+R12 のユーザー確認待ちで turn が終了している。プロンプトに「承認不要、最後まで自律実行して」を必ず含める。または対話モード（Claude Code UI から直接呼び出し）で実行する。
+
+### `claude -p --permission-mode acceptEdits` で途中停止する
+
+`acceptEdits` は Edit/Write のみ自動承認で、Bash コマンド（`pnpm exec remotion still` 等）は権限プロンプト待ちになる。`--permission-mode bypassPermissions` を使う。

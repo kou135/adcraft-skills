@@ -61,10 +61,18 @@ create-advertisement skill で examples/product-sample のリール動画を生�
 
 ```bash
 unset ANTHROPIC_API_KEY
-claude -p "create-advertisement skill で examples/product-sample のリール動画を 1 本生成して" \
-  --permission-mode acceptEdits \
-  --max-turns 200
+claude -p "create-advertisement skill で examples/product-sample のリール動画を 1 本生成して。承認不要、最後まで自律実行して。" \
+  --permission-mode bypassPermissions \
+  --max-turns 200 \
+  --output-format stream-json --verbose
 ```
+
+**重要**：
+
+- `--permission-mode bypassPermissions` を使う（`acceptEdits` だと Bash コマンドの権限プロンプトで止まる）
+- プロンプトに「**承認不要、最後まで自律実行して**」等を含める（含めないと R12 のユーザー確認待ちで turn が終了する）
+- `--output-format stream-json --verbose` を付けると進捗がリアルタイムで流れる（無音状態で何分も待たずに済む）
+- 初回は Remotion が Chromium をダウンロードするため 5〜10 分かかる場合あり
 
 成功すると `output/product-sample/YYYY-MM-DD/` に動画と `manifest.json` が出力されます。
 
@@ -151,10 +159,10 @@ adcraft/
 ```bash
 cd /path/to/adcraft && \
   unset ANTHROPIC_API_KEY && \
-  claude -p "create-advertisement skill で全商品の動画を生成して" \
-    --permission-mode acceptEdits \
+  claude -p "create-advertisement skill で全商品の動画を生成して。承認不要、最後まで自律実行して。" \
+    --permission-mode bypassPermissions \
     --max-turns 200 \
-    --output-format stream-json \
+    --output-format stream-json --verbose \
     >> logs/$(date +%Y%m%d-%H%M%S).log 2>&1
 ```
 
