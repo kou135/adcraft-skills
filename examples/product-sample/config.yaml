@@ -1,0 +1,39 @@
+product_name: "TaskFlow"
+description: "複数プロジェクトを 1 画面で扱える、軽量タスク管理ツール"
+
+formats:
+  reel:
+    enabled: true
+    count: 5
+    duration: 25
+    aspect: "9:16"
+    fps: 30
+
+  slide_image:
+    enabled: false
+    count: 0
+    aspect: "1:1"
+    slides_per_set: 5
+
+  horizontal:
+    enabled: false
+    count: 0
+    duration: 25
+    aspect: "16:9"
+    fps: 30
+
+  blog:
+    enabled: false
+    count: 0
+    target_word_count: 1500
+
+output:
+  base_dir: "./output"
+
+validation:
+  max_iteration: 3
+  check_frames: [0, "mid", "end"]
+  strict_mode: false
+
+variation:
+  strategy: "auto"
