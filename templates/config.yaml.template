@@ -1,0 +1,53 @@
+# {{PRODUCT_NAME}} の広告動画生成設定
+#
+# このファイルは Skill `extract-product-ui` が生成したひな形です。
+# Skill `create-advertisement` がこの設定を読み、生成計画を立てます。
+# 配信関連の設定（Git push 先・SNS 投稿等）は本 Skill の責務外のため
+# このスキーマには含まれません。
+
+product_name: "{{PRODUCT_NAME}}"
+description: ""
+
+formats:
+  reel:
+    enabled: true
+    count: 5
+    duration: 25      # 秒。20〜30 推奨
+    aspect: "9:16"
+    fps: 30
+
+  slide_image:
+    enabled: false
+    count: 0
+    aspect: "1:1"
+    slides_per_set: 5
+
+  horizontal:
+    enabled: false
+    count: 0
+    duration: 25
+    aspect: "16:9"
+    fps: 30
+
+  blog:
+    enabled: false
+    count: 0
+    target_word_count: 1500
+
+output:
+  base_dir: "./output"
+
+validation:
+  max_iteration: 3
+  check_frames: [0, "mid", "end"]
+  strict_mode: false
+
+variation:
+  strategy: "auto"   # "auto" or "manual"
+  # strategy: "manual" の場合のみ以下を有効化:
+  # manual_directions:
+  #   - "機能訴求"
+  #   - "問題解決"
+  #   - "Before/After"
+  #   - "ユーザーストーリー"
+  #   - "差別化"
