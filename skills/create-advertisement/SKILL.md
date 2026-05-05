@@ -1,6 +1,6 @@
 ---
 name: create-advertisement
-description: products/<name>/ の core.md と config.yaml に従って、Remotion で広告動画（リール / 横長 / スライド画像）を複数本生成し、視覚検証ループ（remotion still で PNG → Claude が画像として読み判定 → 修正）を経て output/<product>/<YYYY-MM-DD>/ に MP4 等を配置する。配信は責務外。トリガー例：「広告動画を作って」「リールを生成」「create-advertisement」「<商品名> の動画を生成」。
+description: products/<name>/ の core.md と config.yaml に従って、Remotion で広告動画（リール / 横長 / スライド画像）を複数本生成し、視覚検証ループ（remotion still で PNG → Claude が画像として読み判定 → 修正）を経て ./output/<product>/<YYYY-MM-DD>/ に MP4 等を配置する。配信は責務外。トリガー例：「広告動画を作って」「リールを生成」「create-advertisement」「adcraft で動画生成」「<商品名> の動画を生成」「adcraft:create-advertisement」。
 ---
 
 # create-advertisement
@@ -90,7 +90,7 @@ R7 のループを各 item について実行する：
 
 #### 4.1 Remotion `.tsx` を書く
 
-- 配置先：`output/<product>/<YYYY-MM-DD>/<id>.tsx`
+- 配置先：`./output/<product>/<YYYY-MM-DD>/<id>.tsx`
 - 共通パーツ：`remotion/src/shared/{IPhoneFrame, TextOverlay, transitions}` から import
 - 商品コンポーネント：`products/<name>/components/<Screen>` から相対 import
 
@@ -114,7 +114,7 @@ R7 のループを各 item について実行する：
 - `frame: floor(durationInFrames / 2)`（中間）
 - `frame: durationInFrames - 1`（終了）
 
-出力先：`output/<product>/<YYYY-MM-DD>/.frames/<id>-f0.png` 等
+出力先：`./output/<product>/<YYYY-MM-DD>/.frames/<id>-f0.png` 等
 
 #### 4.4 視覚チェック
 
@@ -205,14 +205,14 @@ pnpm exec remotion render <entry> <composition-id> <output-mp4-path>
 
 - `.frames/` 配下の検証用 PNG は基本残す（後追い検証のため）が、stict_mode 時は削除可
 - 失敗した item の partial files は必ず削除
-- 最終的な `output/<product>/<date>/` は manifest と動画ファイルが揃っている状態にする
+- 最終的な `./output/<product>/<date>/` は manifest と動画ファイルが揃っている状態にする
 
 ## アンチパターン（やらないこと）
 
 R に書かれた禁則に加えて：
 
 - ❌ Composition id を product 名なしで作る（複数商品で衝突する）
-- ❌ `output/` の外にファイルを書く（gitignore からも外れる）
+- ❌ `./output/` の外にファイルを書く（gitignore からも外れる）
 - ❌ 視覚チェックなしで render する
 - ❌ 1 本がエラーになったら全体停止する
 - ❌ 配信処理（git, gh, curl で SNS API、Slack 通知等）を「便利だから」追加する
@@ -247,4 +247,4 @@ cd /path/to/adcraft && \
 | 1 本のレンダリングエラー | スキップして `issues.json` に記録、続行 |
 | 視覚検証で max_iteration 超過 | スキップして `issues.json` に記録、続行 |
 | Claude Code トークン切れ | プロセス終了、外側スケジューラに任せる |
-| `output/` 書き込み権限なし | 即停止、ユーザー通知 |
+| `./output/` 書き込み権限なし | 即停止、ユーザー通知 |

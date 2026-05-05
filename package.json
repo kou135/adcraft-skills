@@ -5,6 +5,21 @@
   "description": "Claude Code Skills that auto-generate advertisement videos with Remotion. Self-loop: generate -> visual verify -> self-correct -> output/.",
   "license": "MIT",
   "author": "Kota Suzuki",
+  "homepage": "https://github.com/kou135/adcraft-skills",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kou135/adcraft-skills.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kou135/adcraft-skills/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "remotion",
+    "advertisement",
+    "video-generation"
+  ],
   "type": "module",
   "engines": {
     "node": ">=20.0.0"

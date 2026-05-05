@@ -1,0 +1,32 @@
+{
+  "name": "adcraft",
+  "version": "0.1.0",
+  "description": "Auto-generate advertisement videos with Remotion + Claude Code self-loop. Two skills: extract product UI from your repo, then generate, visually verify, and self-correct short-form ad videos.",
+  "author": {
+    "name": "Kota Suzuki"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/kou135/adcraft-skills",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kou135/adcraft-skills.git"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "remotion",
+    "advertisement",
+    "video-generation",
+    "reel",
+    "instagram",
+    "tiktok",
+    "ai"
+  ],
+  "skills": [
+    "./skills/extract-product-ui",
+    "./skills/create-advertisement"
+  ],
+  "commands": [
+    "./.claude/commands"
+  ]
+}
