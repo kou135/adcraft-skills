@@ -10,31 +10,15 @@
 - Claude Code（Pro/Max サブスクまたは API キー）
 - macOS / Linux
 
-## 1. セットアップ（2 通り）
-
-### 経路 A：プラグインインストール（slash command で呼びたい場合）
+## 1. クローン & 依存解決
 
 ```bash
-claude plugin install adcraft@github:kou135/adcraft-skills
-```
-
-そして作業ディレクトリで Remotion ランタイムを準備：
-
-```bash
-mkdir my-adcraft-workspace && cd my-adcraft-workspace
-git clone https://github.com/kou135/adcraft-skills .
-pnpm install
-```
-
-### 経路 B：直接 clone（カスタマイズ前提）
-
-```bash
-git clone https://github.com/kou135/adcraft-skills adcraft
+git clone <this-repo> adcraft
 cd adcraft
 pnpm install
 ```
 
-どちらの経路でも `pnpm install` で Remotion と関連パッケージが `node_modules/` に取得されます。**Remotion 本体のソースはこのリポジトリには含まれていません**（Remotion ライセンス上の再配布禁止に抵触するため）。
+`pnpm install` で Remotion と関連パッケージが `node_modules/` に取得されます。**Remotion 本体のソースはこのリポジトリには含まれていません**（Remotion ライセンス上の再配布禁止に抵触するため）。
 
 ## 2. Remotion 公式 Skill のインストール
 
@@ -59,13 +43,7 @@ ls ~/.claude/skills/ | grep remotion
 Claude Code を起動して：
 
 ```
-/adcraft:create-advertisement product-sample 1
-```
-
-または skill 名で直接：
-
-```
-adcraft:create-advertisement skill で examples/product-sample のリール動画を 1 本だけ生成して
+create-advertisement skill で examples/product-sample のリール動画を 1 本だけ生成して
 ```
 
 Claude が以下のフローを実行します：
@@ -81,8 +59,7 @@ Claude が以下のフローを実行します：
 
 ```bash
 unset ANTHROPIC_API_KEY  # サブスク利用時に必要
-claude -p "/adcraft:create-advertisement product-sample 1" \
-  --model sonnet \
+claude -p "create-advertisement skill で examples/product-sample のリール動画を 1 本生成して。承認不要、最後まで自律実行して。" \
   --permission-mode bypassPermissions \
   --max-turns 200 \
   --output-format stream-json --verbose
@@ -90,9 +67,8 @@ claude -p "/adcraft:create-advertisement product-sample 1" \
 
 **重要**：
 - `bypassPermissions` を使うこと（`acceptEdits` だと Bash 権限で止まる）
-- slash コマンドが効かない場合は skill 名で呼ぶ：`adcraft:create-advertisement skill で examples/product-sample のリール動画を 1 本生成して。承認不要、最後まで自律実行して。`
+- 「承認不要、最後まで自律実行して」をプロンプトに含めること（含めないと計画提示で turn 終了）
 - `stream-json --verbose` で進捗を可視化（初回は Chromium DL で 5〜10 分かかる）
-- `--model sonnet` 推奨（コスト 1/2〜1/3、品質ほぼ同等）
 
 ## 4. 出力の確認
 
@@ -116,16 +92,10 @@ output/product-sample/2026-05-04/
 サンプルが動いたら、自分のプロダクトを取り込みます。
 
 ```
-/adcraft:extract-product-ui /path/to/my-nextjs-project mynote
+extract-product-ui skill で /path/to/my-nextjs-project を mynote という名前で抽出して
 ```
 
-または skill 名で直接：
-
-```
-adcraft:extract-product-ui skill で /path/to/my-nextjs-project を mynote という名前で抽出して
-```
-
-抽出後、`products/mynote/core.md` を編集してマーケ方針を記入し、再度 `/adcraft:create-advertisement mynote` を呼び出します。
+抽出後、`products/mynote/core.md` を編集してマーケ方針を記入し、再度 `create-advertisement` を呼び出します。
 
 ---
 

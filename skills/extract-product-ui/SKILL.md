@@ -1,6 +1,6 @@
 ---
 name: extract-product-ui
-description: ユーザーの実プロダクト（Next.js / React / Vite 等）のソースコードから、広告動画用に使えるプレゼンテーショナル UI コンポーネントを抽出して `products/<name>/` に配置する。商品の新規追加時、または実プロダクトの UI 大型更新時に使用。トリガー例：「○○ の UI を抽出」「△△ プロダクトを adcraft に追加」「product-ui を extract」「adcraft で商品を追加」「extract-product-ui」「adcraft:extract-product-ui」。
+description: ユーザーの実プロダクト（Next.js / React / Vite 等）のソースコードから、広告動画用に使えるプレゼンテーショナル UI コンポーネントを抽出して `products/<name>/` に配置する。商品の新規追加時、または実プロダクトの UI 大型更新時に使用。トリガー例：「○○ の UI を抽出」「△△ プロダクトを adcraft に追加」「product-ui を extract」。
 ---
 
 # extract-product-ui

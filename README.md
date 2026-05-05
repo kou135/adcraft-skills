@@ -33,75 +33,46 @@ npx skills add remotion-dev/skills
 
 ---
 
-## クイックスタート
+## クイックスタート（30 分）
 
-### 経路 A：プラグインとしてインストール（推奨）
-
-Claude Code に adcraft プラグインをインストール：
+### 1. クローン & 依存解決（2 分）
 
 ```bash
-claude plugin install adcraft@github:kou135/adcraft-skills
+git clone <this-repo> adcraft
+cd adcraft
+pnpm install
 ```
 
-これで `/adcraft:extract-product-ui` と `/adcraft:create-advertisement` のスラッシュコマンドが使えます。
-
-ただし**動画生成には Remotion ランタイムが必要**なので、利用者の作業ディレクトリで以下を実行：
+### 2. 公式 Skill インストール（1 分）
 
 ```bash
-mkdir my-adcraft-workspace && cd my-adcraft-workspace
-git clone https://github.com/kou135/adcraft-skills .
-pnpm install
 npx skills add remotion-dev/skills
 ```
 
-そして対話モードで：
+### 3. サンプル動画を生成（5〜25 分）
+
+Claude Code を起動し、対話モードで：
 
 ```
-/adcraft:create-advertisement product-sample
+create-advertisement skill で examples/product-sample のリール動画を生成して
 ```
 
 または headless モード：
 
 ```bash
 unset ANTHROPIC_API_KEY
-claude -p "/adcraft:create-advertisement product-sample 1" \
+claude -p "create-advertisement skill で examples/product-sample のリール動画を 1 本生成して。承認不要、最後まで自律実行して。" \
   --permission-mode bypassPermissions \
   --max-turns 200 \
   --output-format stream-json --verbose
 ```
 
-### 経路 B：リポジトリを clone（カスタマイズしたい場合）
+**重要**：
 
-```bash
-git clone https://github.com/kou135/adcraft-skills adcraft
-cd adcraft
-pnpm install
-npx skills add remotion-dev/skills
-```
-
-対話モード：
-
-```
-adcraft:create-advertisement skill で examples/product-sample のリール動画を 1 本生成して
-```
-
-headless モード：
-
-```bash
-unset ANTHROPIC_API_KEY
-claude -p "adcraft:create-advertisement skill で examples/product-sample のリール動画を 1 本生成して。承認不要、最後まで自律実行して。" \
-  --permission-mode bypassPermissions \
-  --max-turns 200 \
-  --output-format stream-json --verbose
-```
-
-### 共通の重要ポイント
-
-- `--permission-mode bypassPermissions` を使う（`acceptEdits` だと Bash 権限で止まる）
+- `--permission-mode bypassPermissions` を使う（`acceptEdits` だと Bash コマンドの権限プロンプトで止まる）
 - プロンプトに「**承認不要、最後まで自律実行して**」等を含める（含めないと R12 のユーザー確認待ちで turn が終了する）
-- `--output-format stream-json --verbose` を付けると進捗がリアルタイムで流れる
-- 初回は Remotion が Chromium をダウンロードするため 5〜10 分かかる
-- コスト効率を重視するなら `--model sonnet` を追加（Sonnet 4.6 で半額〜1/3 のコストになる）
+- `--output-format stream-json --verbose` を付けると進捗がリアルタイムで流れる（無音状態で何分も待たずに済む）
+- 初回は Remotion が Chromium をダウンロードするため 5〜10 分かかる場合あり
 
 成功すると `output/product-sample/YYYY-MM-DD/` に動画と `manifest.json` が出力されます。
 
@@ -132,13 +103,7 @@ claude -p "adcraft:create-advertisement skill で examples/product-sample のリ
 ### Step 1. UI を抽出
 
 ```
-/adcraft:extract-product-ui /path/to/my-product myproduct
-```
-
-または skill 名で直接呼び出し：
-
-```
-adcraft:extract-product-ui skill で /path/to/my-product を myproduct という名前で adcraft に追加して
+extract-product-ui skill で /path/to/my-product を myproduct という名前で adcraft に追加して
 ```
 
 `products/myproduct/` が生成されます。
@@ -148,18 +113,10 @@ adcraft:extract-product-ui skill で /path/to/my-product を myproduct という
 `products/myproduct/core.md` を開いて、ターゲット層・訴求軸・ブランドトーンを記入。
 `products/myproduct/config.yaml` でフォーマットや本数を調整。
 
-詳細は [`docs/core-md-guide.md`](./docs/core-md-guide.md) を参照。
-
 ### Step 3. 動画を生成
 
 ```
-/adcraft:create-advertisement myproduct
-```
-
-または skill 名で直接呼び出し：
-
-```
-adcraft:create-advertisement skill で myproduct の動画を生成して
+create-advertisement skill で myproduct の動画を生成して
 ```
 
 ---
@@ -202,19 +159,14 @@ adcraft/
 ```bash
 cd /path/to/adcraft && \
   unset ANTHROPIC_API_KEY && \
-  claude -p "/adcraft:create-advertisement <product-name>" \
-    --model sonnet \
+  claude -p "create-advertisement skill で全商品の動画を生成して。承認不要、最後まで自律実行して。" \
     --permission-mode bypassPermissions \
-    --max-turns 300 \
+    --max-turns 200 \
     --output-format stream-json --verbose \
     >> logs/$(date +%Y%m%d-%H%M%S).log 2>&1
 ```
 
-注：
-
-- `ANTHROPIC_API_KEY` がセットされていると Claude Code がそちらを優先します。サブスク利用時は明示的に `unset` してください
-- `--model sonnet` で Sonnet 4.6 を指定してコスト効率化（デフォルトは Opus 4.7）
-- 5 本生成なら `--max-turns 300` 推奨
+注：`ANTHROPIC_API_KEY` がセットされていると Claude Code がそちらを優先します。サブスク利用時は明示的に `unset` してください。
 
 ---
 

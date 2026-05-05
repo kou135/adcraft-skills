@@ -12,13 +12,7 @@
 - ユーザーの実プロダクト UI を組み込んだ、X / Instagram で配信できる短尺広告動画を **5 本** 生成する
 - 5 本それぞれが説得力ある「違い」を持つこと（型当てはめではなく、Claude が根拠を持って差を説明できる粒度）
 - 視覚的に崩れがなく、即配信可能な品質であること
-- 配信は本 Skill の責務外。`./output/<product>/<YYYY-MM-DD>/` に成果物を配置するまでで完了
-
-## パス解決の前提
-
-本 Skill 内で `./output/`、`./products/`、`./remotion/` 等の相対パスは、**すべて Claude Code を起動したカレントワーキングディレクトリ（CWD）基準**で解決する。プラグインインストール経由（`~/.claude/plugins/cache/...`）であっても**プラグインキャッシュ内には書かない**こと。利用者の作業リポジトリ内の `./output/` に書く。
-
-`config.yaml.output.base_dir` が指定されている場合は、CWD からの相対パスとして解釈する（例：`./output`、`../shared-output` 等）。絶対パスも許容。
+- 配信は本 Skill の責務外。`output/<product>/<YYYY-MM-DD>/` に成果物を配置するまでで完了
 
 ## 不変ルール
 
@@ -78,7 +72,7 @@
 1 本につき以下のループを実行する：
 
 1. **計画**：variation を踏まえてシーン構成・台詞・エフェクトを決める
-2. **生成**：`./output/<product>/<date>/<id>.tsx` に Remotion `.tsx` を書く
+2. **生成**：`output/<product>/<date>/<id>.tsx` に Remotion `.tsx` を書く
    - Remotion API（`useCurrentFrame`, `interpolate`, `Sequence`, `Composition` 等）の使い方は `remotion-best-practices` Skill のルールに従う
    - 共通パーツ（iPhoneFrame, TextOverlay, transitions）は `remotion/src/shared/` から import
    - 商品コンポーネントは `products/<name>/components/` から相対 import
@@ -115,7 +109,7 @@
 - 管理画面 / DB への登録
 - Slack 通知 等の外部連携
 
-成果物を `./output/` に配置したら完了とする。配信が必要なユーザーは別途スクリプトを用意する設計。
+成果物を `output/` に配置したら完了とする。配信が必要なユーザーは別途スクリプトを用意する設計。
 
 ### R11. 商品設定の整合性チェック
 
@@ -146,7 +140,7 @@
 
 ## 受入基準（このルールに従って生成された成果物の合格条件）
 
-1. `./output/<product>/<date>/` に MP4 が（reel 設定なら）5 本配置されている
+1. `output/<product>/<date>/` に MP4 が（reel 設定なら）5 本配置されている
 2. 各動画が R2 の必須要素（実プロダクト画面 + オリジナル紹介 + 2 種以上のエフェクト）を含む
 3. 視覚チェックがすべて pass している（または `issues.json` で明示的にスキップが説明されている）
 4. `tsc --noEmit` がエラーなく通る
@@ -162,4 +156,4 @@
 - ❌ `core.md` を無視して config だけで生成する（マーケ方針が反映されない）
 - ❌ Remotion 実装の細かい使い方を本 Skill 内で考え込む（→ `remotion-best-practices` に委譲）
 - ❌ 配信処理を「ついでに」実装する
-- ❌ 失敗した中間ファイルを `./output/` に残したまま終了する
+- ❌ 失敗した中間ファイルを `output/` に残したまま終了する
