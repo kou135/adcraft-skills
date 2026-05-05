@@ -16,12 +16,5 @@
     "instagram",
     "tiktok",
     "ai"
-  ],
-  "skills": [
-    "./skills/extract-product-ui",
-    "./skills/create-advertisement"
-  ],
-  "commands": [
-    "./.claude/commands"
   ]
 }
