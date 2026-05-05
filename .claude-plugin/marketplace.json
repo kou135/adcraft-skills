@@ -19,9 +19,7 @@
       "version": "0.1.0",
       "homepage": "https://github.com/kou135/adcraft-skills",
       "license": "MIT",
-      "author": {
-        "name": "Kota Suzuki"
-      },
+      "author": "Kota Suzuki",
       "keywords": [
         "claude-code",
         "claude-code-plugin",
