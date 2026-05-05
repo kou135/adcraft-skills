@@ -38,7 +38,7 @@ npx skills add remotion-dev/skills
 ### 1. クローン & 依存解決（2 分）
 
 ```bash
-git clone <this-repo> adcraft
+git clone https://github.com/kou135/adcraft-skills.git adcraft
 cd adcraft
 pnpm install
 ```
