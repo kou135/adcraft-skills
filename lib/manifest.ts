@@ -21,6 +21,7 @@ export interface ManifestItem {
   id: string;
   file: string;
   preview: string;
+  copy?: string;
   duration_sec?: number;
   validation: ValidationResult;
   variation_note: string;
