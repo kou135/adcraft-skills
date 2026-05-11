@@ -176,6 +176,45 @@ pnpm exec remotion render <entry> <composition-id> <output-mp4-path>
 }
 ```
 
+#### 4.11 投稿コピーの生成（R13）
+
+レンダリング成功後、`<id>.md` を同階層に書き出す。SNS 投稿（X / Instagram 等）用の素材であり、配信処理（R10）はしない。
+
+入力として次を踏まえる：
+
+- `products/<name>/core.md` の「ターゲット層」「訴求の軸」「ブランドトーン」「避けたい表現」
+- 当該 item の `variation_note`、`type`、`duration_sec`、生成した `.tsx` のシーン構成
+
+ファイル構造（R13 に従う）：
+
+```markdown
+---
+id: <item-id>
+product: <product>
+type: <type>
+generated_at: <ISO8601>
+---
+
+<フック1文（20〜45 文字、数字 / 意外性 / 二人称呼びかけのいずれか必須、句点で終える）>
+
+<本文 2〜4 文、合計 200 文字以内、ブランドトーン準拠、variation_note の差別化軸を反映>
+
+#tag1 #tag2 #tag3 #tag4 #tag5
+```
+
+書き出し要件：
+
+- パス：`output/<product>/<date>/<id>.md`
+- atomic に近い扱いをする（一時ファイル → rename）。`lib/manifest.ts` の `writeManifestAtomic` と同様の発想
+- ハッシュタグは**必ず 5 本**、商品名タグを 1 本含み、半角スペース区切りで 1 行
+- フックを `#` や絵文字で始めない / 45 文字超で始めない（R13 の規約に違反したら 1 回だけ書き直す。それでも違反したらこの `.md` をスキップ）
+
+コピー生成だけが失敗した場合：
+
+- `.md` は出力しない
+- `issues.json` に `{ id, reason: "copy_generation_failed" }` を追記
+- 動画 / preview / validation は通常通り残す（manifest 上で `copy` フィールドを省略）
+
 ### Step 5. manifest.json の生成（R9）
 
 全 item の処理が**完了した後**に、`lib/manifest.ts` の `writeManifestAtomic` を使って一括書き出し。
@@ -193,6 +232,7 @@ pnpm exec remotion render <entry> <composition-id> <output-mp4-path>
       "id": "taskflow-reel-1",
       "file": "taskflow-reel-1.mp4",
       "preview": "taskflow-reel-1.preview.png",
+      "copy": "taskflow-reel-1.md",
       "duration_sec": 25,
       "validation": { "passed": true, "iterations": 1, "issues": [] },
       "variation_note": "機能訴求中心。Dashboard を中心に複数プロジェクト管理の効率性を見せる流れ。"
@@ -205,7 +245,7 @@ pnpm exec remotion render <entry> <composition-id> <output-mp4-path>
 
 - `.frames/` 配下の検証用 PNG は基本残す（後追い検証のため）が、stict_mode 時は削除可
 - 失敗した item の partial files は必ず削除
-- 最終的な `output/<product>/<date>/` は manifest と動画ファイルが揃っている状態にする
+- 最終的な `output/<product>/<date>/` は manifest / 動画ファイル / `.md`（コピー生成が成功したもののみ）が揃っている状態にする
 
 ## アンチパターン（やらないこと）
 
@@ -246,5 +286,6 @@ cd /path/to/adcraft && \
 | `remotion-best-practices` 未インストール | 停止、`npx skills add remotion-dev/skills` を案内 |
 | 1 本のレンダリングエラー | スキップして `issues.json` に記録、続行 |
 | 視覚検証で max_iteration 超過 | スキップして `issues.json` に記録、続行 |
+| 投稿コピー（`.md`）の生成失敗 | 当該 `.md` のみスキップ、`issues.json` に `copy_generation_failed` を追記、動画は残す |
 | Claude Code トークン切れ | プロセス終了、外側スケジューラに任せる |
 | `output/` 書き込み権限なし | 即停止、ユーザー通知 |
