@@ -1,0 +1,66 @@
+product_name: "TaskFlow"
+description: "複数プロジェクトを 1 画面で扱える、軽量タスク管理ツール"
+
+formats:
+  reel:
+    enabled: true
+    count: 1                  # MVP: Higgsfield版は1本のみ生成（旧skillで5本回す時は5に戻す）
+    duration: 20              # MVP: 20秒（既存25秒生成物は output/ に保持済、影響なし）
+    aspect: "9:16"
+    fps: 30
+
+  slide_image:
+    enabled: false
+    count: 0
+    aspect: "1:1"
+    slides_per_set: 5
+
+  horizontal:
+    enabled: false
+    count: 0
+    duration: 25
+    aspect: "16:9"
+    fps: 30
+
+  blog:
+    enabled: false
+    count: 0
+    target_word_count: 1500
+
+output:
+  base_dir: "./output"
+
+validation:
+  max_iteration: 3
+  check_frames: [0, "mid", "end"]
+  strict_mode: false
+
+variation:
+  strategy: "auto"
+
+# create-advertisement-with-higgsfield skill 用設定
+higgsfield:
+  enabled: true
+  cost_limit_usd: 10.00
+  cost_safety_margin: 0.95
+  shots_per_video: 4
+  shot_duration_sec: 5        # 4カット × 5秒 = 20秒 (formats.reel.duration と一致)
+  parallel: false
+  image:
+    model_preference:
+      - "gpt-image-2"
+      - "nano-banana-2"
+    max_iterations_per_shot: 3
+  video:
+    model_preference:
+      - "seedance2"
+      - "seedance2-fast"
+    one_shot: true
+    fallback_to_static: true
+  tts:
+    provider: "elevenlabs"
+    voice_id: ""              # ← Task 7 Step 7.4 で ElevenLabs から取得して埋める
+    model_id: "eleven_turbo_v2_5"
+  bgm:
+    required: true
+    selection: "auto"
