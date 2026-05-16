@@ -18,3 +18,9 @@ build/
 # pnpm
 .pnpm-store/
 .claude/settings.local.json
+
+# skill-creator eval workspace
+products/_eval-workspace/
+
+# Higgsfield skill 中間素材（生成画像/動画/TTS）
+output/**/.assets/
