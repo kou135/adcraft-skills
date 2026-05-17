@@ -1,0 +1,80 @@
+# Minima の広告動画生成設定
+#
+# このファイルは Skill `extract-product-ui` が生成したひな形です。
+# Skill `create-advertisement` がこの設定を読み、生成計画を立てます。
+# 配信関連の設定（Git push 先・SNS 投稿等）は本 Skill の責務外のため
+# このスキーマには含まれません。
+
+product_name: "Minima"
+description: ""
+
+formats:
+  reel:
+    enabled: true
+    count: 1          # MVP: Higgsfield版は1本のみ生成（旧skillで10本回す時は10に戻す）
+    duration: 20      # 秒。20〜30 推奨
+    aspect: "9:16"
+    fps: 30
+
+  slide_image:
+    enabled: false
+    count: 0
+    aspect: "1:1"
+    slides_per_set: 5
+
+  horizontal:
+    enabled: false
+    count: 0
+    duration: 25
+    aspect: "16:9"
+    fps: 30
+
+  blog:
+    enabled: false
+    count: 0
+    target_word_count: 1500
+
+output:
+  base_dir: "./output"
+
+validation:
+  max_iteration: 3
+  check_frames: [0, "mid", "end"]
+  strict_mode: false
+
+variation:
+  strategy: "auto"   # "auto" or "manual"
+  # strategy: "manual" の場合のみ以下を有効化:
+  # manual_directions:
+  #   - "機能訴求"
+  #   - "問題解決"
+  #   - "Before/After"
+  #   - "ユーザーストーリー"
+  #   - "差別化"
+
+  # create-advertisement-with-higgsfield skill 用設定
+higgsfield:
+  enabled: true
+  cost_limit_usd: 10.00
+  cost_safety_margin: 0.95
+  shots_per_video: 4
+  shot_duration_sec: 5        # 4カット × 5秒 = 20秒 (formats.reel.duration と一致)
+  parallel: false
+  image:
+    model_preference:
+      - "gpt-image-2"
+      - "nano-banana-2"
+    max_iterations_per_shot: 3
+  video:
+    model_preference:
+      - "seedance2"
+      - "seedance2-fast"
+    one_shot: true
+    fallback_to_static: true
+  tts:
+    provider: "elevenlabs"
+    voice_id: "l7ME2dcqpdvq6E8sCS24"              # ← Task 7 Step 7.4 で ElevenLabs から取得して埋める
+    model_id: "eleven_turbo_v2_5"
+  bgm:
+    required: false           # 完成MP4にCapCut等で手動編集BGM後付け運用
+    selection: "auto"

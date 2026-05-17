@@ -51,3 +51,32 @@ variation:
   #   - "Before/After"
   #   - "ユーザーストーリー"
   #   - "差別化"
+
+# create-advertisement-with-higgsfield skill 用設定
+# 使わない場合は higgsfield.enabled: false にすればOK（既存 create-advertisement のみ動く）
+higgsfield:
+  enabled: false              # true にすると新skillが起動可能になる
+  cost_limit_usd: 10.00       # 1run あたりのハードコスト上限（USD）
+  cost_safety_margin: 0.95    # 実停止しきい値（limit_usd * safety_margin で abort）
+  shots_per_video: 4          # 1動画あたりカット数
+  shot_duration_sec: 5        # 1カット秒数（合計 = formats.reel.duration と一致させる）
+  parallel: false             # MVP は直列固定
+  image:
+    model_preference:
+      - "gpt-image-2"         # 第一優先
+      - "nano-banana-2"       # fallback
+    max_iterations_per_shot: 3  # 初回 + リトライ最大2回
+  video:
+    model_preference:
+      - "seedance2"
+      - "seedance2-fast"
+    one_shot: true            # true: 動画失敗時は静止画fallback、再生成しない
+    fallback_to_static: true
+  tts:
+    provider: "elevenlabs"
+    voice_id: ""              # ElevenLabs voice ID を貼る（未設定なら起動時停止）
+    model_id: "eleven_turbo_v2_5"
+  bgm:
+    required: true            # false なら BGM 配置なしでも動く（無音）
+    selection: "auto"         # auto / explicit。explicit なら下の explicit_file 指定
+    # explicit_file: "energetic-01.mp3"
