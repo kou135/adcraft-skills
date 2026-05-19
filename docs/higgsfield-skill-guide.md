@@ -9,7 +9,8 @@
 |---|---|
 | 試運転 / 無料 / イラスト系 | Skill B |
 | 量産（月 10 本以上） | Skill B（コスト 0）|
-| 実写級ビジュアル + ナレーションが欲しい | **Skill C** |
+| 実写級ビジュアル + ナレーション台本のみ欲しい（音声・BGM は手動付与） | **Skill C lite モード（デフォルト）** |
+| 実写級ビジュアル + ナレーション TTS 込みで完結したい | **Skill C auto モード（`tts.enabled: true`）** |
 | ペルソナの一人称モノローグ動画 | **Skill C** |
 | ブランド世界観をプロフェッショナルに表現 | **Skill C** |
 | 試験運用 / 高品質少数本 | **Skill C** |
@@ -71,7 +72,7 @@ products/<name>/
     │   ├── worldview.md
     │   ├── feature.md
     │   └── persona.md
-    └── bgm/                         ← 任意（bgm.required: true 時のみ必須）
+    └── bgm/                         ← 任意（bgm.required: true 時のみ必須。デフォルト lite モードでは未使用）
 ```
 
 詳細は [`content-category-framework.md`](./content-category-framework.md) と [`voice-spec-design.md`](./voice-spec-design.md) を参照。
@@ -108,6 +109,65 @@ TTS 後に scripts/audio-post-master.sh で必ず post-master。\
 
 R-H11（既存 R12 継承）により `承認不要` / `自律実行` 等のキーワードが含まれていれば対話モードでも確認をスキップする。
 
+## lite モード vs auto モード（v1.2.0 〜）
+
+`config.yaml.higgsfield` の 2 フィールドで挙動を切替える（R-H18）。**デフォルトは lite モード**:
+
+| フィールド | デフォルト | 効果 |
+|---|---|---|
+| `tts.enabled` | **`false`** | `false` = lite モード（TTS スキップ）／ `true` = auto モード（ElevenLabs で自動生成 + ffmpeg post-master）|
+| `bgm.required` | **`false`** | `false` = .tsx に BGM `<Audio>` を埋め込まない／ `true` = `assets/bgm/*.mp3` を全 shot 通敷 |
+
+### lite モード（推奨スタート）
+
+**何が起きるか**:
+- 動画 (seedance/kling/static) + テロップ (`<TextOverlay>`) だけが Remotion で合成され、**MP4 は無音 で出る**
+- `.md` に **「## ナレーション台本」セクション** が追加され、shot 別の SSML 込み台本（voice-spec 準拠）が記載される
+- ElevenLabs API は一切呼ばない（コスト $0、char 消費 0）
+
+**使い方**:
+1. Skill C 起動（lite モード自動）
+2. 出力 `.md` のナレーション台本を読む
+3. CapCut / Premiere 等で:
+   - mp4 を読み込み
+   - 各 shot 境界に narration を当てる（録音 or 手動 TTS）
+   - 必要なら BGM を loop で追加
+4. 全体音量を −14 LUFS に正規化して export
+
+**メリット**:
+- TTS の品質限界（shot 尺超過による cut-off、イントネーション）を回避
+- voice talent の自由（人間声優 / クリエイター本人 / プロ TTS 等）
+- BGM が自由
+- 結果として **プロダクション品質に到達しやすい**
+
+### auto モード（量産・プロト向け）
+
+**何が起きるか**:
+- ElevenLabs API で TTS 自動生成
+- `scripts/audio-post-master.sh` で −14 LUFS マスタリング（R-H16）
+- `.tsx` に narration `<Audio src=".mastered.mp3" />` + BGM `<Audio>`（`bgm.required: true` 時）が埋め込まれる
+- 完成 MP4 のみで配信可能
+
+**有効化**:
+
+```yaml
+higgsfield:
+  tts:
+    enabled: true             # opt-in
+    voice_id: "l7ME2dcqpdvq6E8sCS24" # 必須（worldview 時は Sara 等）
+  bgm:
+    required: true            # BGM も自動なら true
+```
+
+**注意**:
+- TTS の発話時間が `shot_duration_sec` を超えると **強制 cut off**（Step 7 で警告は出るが、render 自体は通る）
+- shot あたり narration_chars ≤ `shot_duration_sec × 0.85 × (chars/min) / 60` を voice-spec 設計時に厳守
+- 音声品質はモデル / voice に依存。`eleven_turbo_v2_5` は速度重視・品質中庸。プロダクション品質には `eleven_multilingual_v2` 推奨
+
+### 混合モード
+
+`tts.enabled: false, bgm.required: true` のように個別 ON/OFF 可能。例えば「TTS は手動、BGM だけ自動で敷く」「TTS は自動、BGM は CapCut で別曲を当てる」等の戦略が取れる。
+
 ## 11 ステップの流れ
 
 ```
@@ -124,13 +184,21 @@ Step 3  ショット計画（variation_note 先頭 [category] タグ必須）
 Step 4  リファレンス画像 upload
 Step 5  画像生成ループ（cut 直列、最大 3 回再試行）
 Step 6  動画生成（1 発主義、失敗時は R-H5 静止画+ZoomIn フォールバック）
-Step 7  TTS 生成（voice-spec の voice 1st 推奨で試行、fallback chain あり、R-H15）
-Step 7.5 ffmpeg post-master（必須、R-H16）
+Step 7  TTS 生成（R-H18）
+        ├─ lite モード (tts.enabled: false): skip。narration_text_ssml は計画のみで保持
+        └─ auto モード (tts.enabled: true): voice-spec の voice 1st 推奨で試行、fallback chain (R-H15)
+Step 7.5 ffmpeg post-master（auto モード時のみ必須、R-H16）
         → raw mp3 → mastered.mp3
-        → HPF 85Hz + 2.5kHz presence boost + soft compression + loudnorm -16 LUFS
-Step 8  Remotion .tsx 生成（必ず .mastered.mp3 を参照）
+        → HPF 85Hz + 2.5kHz presence boost + soft compression + loudnorm -14 LUFS
+Step 8  Remotion .tsx 生成（R-H18）
+        ├─ lite + bgm.required:false : video/img + TextOverlay のみ（無音 MP4）
+        ├─ lite + bgm.required:true  : ↑ + BGM <Audio loop volume={0.4}/>
+        ├─ auto + bgm.required:false : ↑ + narration <Audio src=".mastered.mp3"/>
+        └─ auto + bgm.required:true  : フル（narration + BGM）
 Step 9  既存 R7 検証ループ + render
 Step 10 投稿コピー + manifest + cost-report + issues + R-H17 監査
+        → lite モードでは .md に「## ナレーション台本」を必ず追記
+        → manifest.json に audio_mode ("manual"|"auto") と bgm_embedded を記録
         → mtime 再チェック、変更検知で警告
 Step 11 stdout 終了サマリ
 ```
@@ -178,9 +246,12 @@ abort 時は生成済 shots だけで合成試行し、`cost-report.json` を必
 | 画像 3 回 NG | カット動画化中止、`issues.json` 記録、次カットへ |
 | 動画 1 発 NG | 静止画フォールバック (R-H5)、`issues.json` 記録 |
 | Seedance 2.0 が 402 を返す | プラン制約 → preference 次候補（kling）に fallback、それも失敗なら静止画 |
-| TTS 失敗 | voice fallback chain を試行、すべて失敗なら無音続行 + 記録 |
-| TTS で `<break>` `<prosody>` が無い | 停止 (R-H15, `MISSING_SSML_BREAK / MISSING_SSML_PROSODY`) |
-| ffmpeg post-master 失敗 | 停止 (R-H16, `POST_MASTER_FAILED`)、raw mp3 で render は禁止 |
+| `tts.enabled: true` だが `voice_id` 空 | 停止 (R-H18, `TTS_VOICE_ID_MISSING`) |
+| TTS 失敗（auto モード）| voice fallback chain を試行、すべて失敗なら無音続行 + 記録 |
+| TTS で `<break>` `<prosody>` が無い（auto モード）| 停止 (R-H15, `MISSING_SSML_BREAK / MISSING_SSML_PROSODY`) |
+| ffmpeg post-master 失敗（auto モード）| 停止 (R-H16, `POST_MASTER_FAILED`)、raw mp3 で render は禁止 |
+| lite モードで .tsx に narration `<Audio>` が混入 | 停止 (R-H18, `LITE_MODE_VIOLATION:NARRATION_EMBEDDED`) |
+| lite モードで .md に「## ナレーション台本」が無い | 停止 (R-H18, `LITE_MODE_VIOLATION:NARRATION_SCRIPT_MISSING`) |
 | cost 上限到達 | 即 abort、生成済カットで合成試行 |
 | R-H17 read-only 違反検知 | `issues.json` に `READ_ONLY_VIOLATION` 記録、停止はしない |
 

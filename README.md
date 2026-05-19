@@ -103,14 +103,15 @@ claude -p "create-advertisement skill で examples/product-sample のリール�
 Skill B の上位互換。**Higgsfield MCP（GPT Image 2 + Seedance 2.0 等）と ElevenLabs MCP（TTS）** を統合し、実写級リファレンス画像 + 動画 + ナレーション付きの広告動画を生成する。
 
 - **使用頻度**：中（実写級 / 音声付きが必要な時）
-- **コスト**：1 リール ~$3-4（Higgsfield ~$3.15 + ElevenLabs ~$0.025）
+- **モード**：v1.2.0 から **lite モード（デフォルト、TTS/BGM オフ）** と **auto モード（`tts.enabled: true` / `bgm.required: true` で opt-in）** を切替可能。lite は無音 MP4 + ナレーション台本 `.md` を出力し、音声・BGM は手動付与する前提（プロダクション品質に到達しやすい）
+- **コスト**：lite モード ~$0.36-3.20/リール（TTS 課金なし）／ auto モード ~$3-4（Higgsfield + ElevenLabs ~$0.025）
 - **得意分野**：実写級ビジュアル・ナレーション付き世界観動画・ペルソナ pain 訴求モノローグ
 - **必須前提**：
   - Higgsfield 有料プラン（Starter $15/月 以上）+ Higgsfield MCP 接続
-  - ElevenLabs 有料プラン（Starter $5/月 以上）+ ElevenLabs MCP 接続
+  - ElevenLabs 有料プラン（auto モード時のみ。Starter $5/月 以上）+ ElevenLabs MCP 接続
   - `products/<name>/assets/voice-spec/{category}.md` + `assets/reference/index.md` の整備
   - `products/<name>/core.md` の `## コンテンツカテゴリ` セクション
-- **不変ルール**：[`rules/create-advertisement-with-higgsfield-rules.md`](./rules/create-advertisement-with-higgsfield-rules.md)（v1.1.0 / R-H1〜R-H17）
+- **不変ルール**：[`rules/create-advertisement-with-higgsfield-rules.md`](./rules/create-advertisement-with-higgsfield-rules.md)（v1.2.0 / R-H1〜R-H18）
 - **詳細**：[`skills/create-advertisement-with-higgsfield/SKILL.md`](./skills/create-advertisement-with-higgsfield/SKILL.md)
 
 ### どちらの skill を使う？

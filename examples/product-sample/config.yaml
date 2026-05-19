@@ -37,3 +37,36 @@ validation:
 
 variation:
   strategy: "auto"
+
+# create-advertisement-with-higgsfield skill 用設定
+# 使わない場合は higgsfield.enabled: false にすればOK（既存 create-advertisement のみ動く）
+higgsfield:
+  enabled: false              # true にすると新skillが起動可能になる
+  cost_limit_usd: 10.00
+  cost_safety_margin: 0.95
+  shots_per_video: 4
+  shot_duration_sec: 5        # 5×4=20s。formats.reel.duration=25 と合わない場合は調整
+  parallel: false
+  image:
+    model_preference:
+      - "gpt-image-2"
+      - "nano-banana-2"
+    max_iterations_per_shot: 3
+  video:
+    model_preference:
+      - "seedance2"           # 1st: Plus plan 以上必須
+      - "kling2_6"            # 2nd: Starter plan で利用可
+      - "seedance2-fast"      # 3rd
+    one_shot: true
+    fallback_to_static: true
+  tts:
+    # R-H18 (v1.2.0): TTS は opt-in。デフォルト false (lite モード) で
+    # ナレーション台本のみ .md に生成され、TTS 音声は手動で当てる前提
+    enabled: false            # default OFF。true にすると ElevenLabs API で自動生成
+    provider: "elevenlabs"
+    voice_id: ""              # enabled: true 時に必須
+    model_id: "eleven_turbo_v2_5"
+  bgm:
+    # R-H18: BGM 自動埋込も opt-in。デフォルト false で外部編集ツールで手動付与
+    required: false
+    selection: "auto"

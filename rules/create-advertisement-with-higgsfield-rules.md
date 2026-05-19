@@ -1,12 +1,16 @@
 # create-advertisement-with-higgsfield Rules
 
-> **Skill `create-advertisement-with-higgsfield` の不変ルール（v1.1.0）**
+> **Skill `create-advertisement-with-higgsfield` の不変ルール（v1.2.0）**
 >
 > Skill は実行のたびに**まず**このファイルを読み込み、内容に従って動画生成を行う。
 > 既存 `create-advertisement-rules.md` の R1-R13 とは独立した R-H 系統を採用。
 > 本ファイルの version は `manifest.json` の `higgsfield_rules_version` に記録される。
 >
 > **変更履歴**：
+> - v1.2.0: TTS / BGM の opt-in 化（R-H18）。`config.yaml.higgsfield.tts.enabled` (default `false`)
+>   と `bgm.required` (default `false`) で lite モード（手動 narration / BGM 付与前提）と
+>   auto モード（従来動作）を 1 つの skill で切替可能に。R-H14 / R-H15 / R-H16 は
+>   auto モード時のみ厳格適用、lite モードでは voice-spec を **台本生成のガイド** として使う。
 > - v1.1.0: 音声品質改修。R-H14（content category & voice-spec 読み込み）、R-H15（SSML
 >   強制）、R-H16（ffmpeg post-master）、R-H17（voice-spec / reference の read-only）を
 >   追加。Step 1 / 7 / 8 への影響あり。
@@ -203,6 +207,63 @@ Step 7（TTS 生成）と Step 8（Remotion `.tsx` 生成）の間に **Step 7.5
 - これにより「flat TTS の原因が voice-spec を skill が勝手に書き換えていたから」のような
   事故を構造的に防ぐ。
 
+### R-H18. TTS / BGM 自動化の opt-in 化（lite / auto モード切替）
+
+TTS の音声品質と shot 尺整合性の構造的限界を踏まえ、**自動化を opt-in に切替** する。
+`config.yaml.higgsfield` の 2 フィールドで挙動を切替える:
+
+| フィールド | デフォルト | 効果 |
+|---|---|---|
+| `tts.enabled` | **`false`** | `false` = lite モード（TTS 自動生成スキップ）/ `true` = auto モード（ElevenLabs 経由で自動生成） |
+| `bgm.required` | **`false`** | `false` = .tsx に BGM `<Audio>` を埋め込まない / `true` = `assets/bgm/*.mp3` を全 shot 通敷 |
+
+#### lite モード（デフォルト、`tts.enabled: false`）
+
+- **Step 7（TTS 生成）**：スキップ
+- **Step 7.5（ffmpeg post-master）**：スキップ
+- **Step 8（.tsx 生成）**：narration `<Audio>` を埋め込まない（テロップ `<TextOverlay>` は通常通り）
+- **Step 10（投稿コピー `.md`）**：従来内容に加え、**「## ナレーション台本」セクションを必ず追加**
+  - shot 別に：シーン要約 / 想定テキスト（日本語）/ 想定発話時間 / 強調キーワード / SSML 例 / 推奨 voice / 推奨音量
+  - 末尾に「CapCut / Premiere 等での組み立て手順」を付ける
+- **manifest.json**：`items[].audio_mode: "manual"` を記録
+- **R-H14**（voice-spec 読み込み）：継続適用。voice-spec は **台本生成のガイド** として使う
+- **R-H15**（SSML 強制）：`.md` の SSML 例に対しては適用、TTS 呼び出しはしないので fail-fast 対象外
+- **R-H16**（ffmpeg post-master）：対象なし（TTS 出力が無いため）
+
+#### auto モード（`tts.enabled: true`）
+
+- Step 7 / 7.5 を実行
+- .tsx に narration `<Audio src=...mastered.mp3 />` を埋め込み
+- R-H14 / R-H15 / R-H16 / R-H17 を完全適用
+- `tts.voice_id` が空文字列なら **`TTS_VOICE_ID_MISSING` で fail-fast**
+- `manifest.json`：`items[].audio_mode: "auto"` を記録
+
+#### BGM の独立制御
+
+`bgm.required` は `tts.enabled` と独立:
+
+- `bgm.required: false`：.tsx に BGM `<Audio>` を埋め込まない（lite モードのデフォルト）
+- `bgm.required: true`：`assets/bgm/*.mp3` 必須、`<Audio src=... volume={N} loop />` を Composition top-level に埋め込む
+
+例：「TTS は手動、BGM だけ自動敷きたい」場合は `tts.enabled: false, bgm.required: true`。
+
+#### lite モードでの動画尺整合性
+
+lite モードは TTS の shot 尺超過問題を物理的に回避するが、auto モードに切替えた際に同じ問題が再発しないよう、voice-spec の `Pace Target` に **shot 尺との整合性検証** を強く推奨:
+
+```
+shot あたり narration_chars ÷ chars/min × 60 ≤ shot_duration_sec × 0.85
+```
+
+例：5 秒 shot、chars/min=400 なら narration_chars ≤ 5×0.85÷60×400 = 28 文字。
+この制約を voice-spec に明示すること（将来の R-H19 候補）。
+
+#### 違反検知
+
+- `tts.enabled: false` にもかかわらず ElevenLabs MCP を呼んだ → `LITE_MODE_VIOLATION:tts_called`
+- `bgm.required: false` にもかかわらず `<Audio>` で BGM 埋め込み → `LITE_MODE_VIOLATION:bgm_embedded`
+- lite モードで `.md` に「## ナレーション台本」セクションが無い → `MISSING_NARRATION_SCRIPT`
+
 ## 受入基準
 
 1. `output/<product>/<date>/` に MP4 1 本（MVP 想定）、`.preview.png`、`.md`、`manifest.json`、`issues.json`、`cost-report.json` が揃う
@@ -213,9 +274,10 @@ Step 7（TTS 生成）と Step 8（Remotion `.tsx` 生成）の間に **Step 7.5
 6. `<id>.md` が R13 フォーマット準拠
 7. 中間素材 `.assets/<id>/` に `shot-plan.yaml` / `shot-N.png` / `shot-N.mp4`（または fallback 記録）/ `narration.mp3` が揃う
 8. **R-H14 準拠**：`variation_note` 先頭に `[category]` タグがあり、`assets/voice-spec/{category}.md` が読み込まれている
-9. **R-H15 準拠**：narration スクリプトに `<break>` と `<prosody>` が最低 1 個ずつ含まれ、voice_settings が voice-spec から literal 取得されている
-10. **R-H16 準拠**：`narration-N.mastered.mp3` が出力され、`.tsx` がそれを参照している。`cost-report.json` の `audio.loudness` に raw / mastered の LUFS が記録されている
+9. **R-H15 準拠**（auto モードのみ）：narration スクリプトに `<break>` と `<prosody>` が最低 1 個ずつ含まれ、voice_settings が voice-spec から literal 取得されている
+10. **R-H16 準拠**（auto モードのみ）：`narration-N.mastered.mp3` が出力され、`.tsx` がそれを参照している。`cost-report.json` の `audio.loudness` に raw / mastered の LUFS が記録されている
 11. **R-H17 準拠**：voice-spec / reference の mtime が起動前後で同一（変更されていない）
+12. **R-H18 準拠**：`manifest.json.items[].audio_mode` が `"manual"` (lite) または `"auto"` (auto) で記録されている。lite モードのときは `.md` に「## ナレーション台本」セクションが含まれる
 
 ## アンチパターン
 
@@ -235,3 +297,7 @@ Step 7（TTS 生成）と Step 8（Remotion `.tsx` 生成）の間に **Step 7.5
 - ❌ raw mp3 を `.tsx` から直参照する（必ず `.mastered.mp3` 経由、R-H16）
 - ❌ ffmpeg ポストマスター工程をスキップする（R-H16）
 - ❌ autonomous run 中に voice-spec / reference のファイルを書き換える（R-H17）
+- ❌ `tts.enabled: false` のとき ElevenLabs MCP を呼ぶ（R-H18 lite モード違反）
+- ❌ `bgm.required: false` のとき .tsx に BGM `<Audio>` を埋め込む（R-H18 違反）
+- ❌ lite モードで `.md` のナレーション台本セクションを省略する（R-H18）
+- ❌ `tts.enabled: true` にもかかわらず `tts.voice_id` を空のまま実行する（auto モードで `TTS_VOICE_ID_MISSING`）

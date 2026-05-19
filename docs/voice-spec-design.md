@@ -9,6 +9,17 @@
 
 ハードコード厳禁。spec を変えれば挙動が変わる。spec を変えなければ挙動は固定（autonomous 運用に必要な「再現性」を担保）。
 
+### lite モード / auto モード（v1.2.0 〜, R-H18）
+
+voice-spec は **両モードで台本ガイドとして機能する**:
+
+| モード | voice-spec の用途 |
+|---|---|
+| **lite (default)** | shot 別ナレーション台本を **`.md` の「## ナレーション台本」セクション** に SSML 込みで出力。Pace Target / Prosody Patterns / Exemplar Phrases は **そのまま手動 TTS / 録音時の指示書** になる |
+| **auto (`tts.enabled: true`)** | shot 別ナレーション台本を **ElevenLabs MCP で TTS 化 → ffmpeg post-master**。Recommended ElevenLabs Voices の優先順位、voice_settings、SSML テンプレが literal で適用される |
+
+つまり voice-spec の 6 セクション（Voice Persona / Tone Keywords / Pace Target / Prosody Patterns / Taboos / Recommended ElevenLabs Voices）は **どちらのモードでも必要**。Recommended ElevenLabs Voices は lite モードでは「手動 TTS したいときの参考リスト」として機能する。
+
 ## 必須 6 セクション（欠けると fail-fast）
 
 各 spec ファイルには以下 6 セクションが**必ず** 含まれている必要がある（R-H14 検証対象）:
@@ -216,4 +227,4 @@ ElevenLabs `eleven_turbo_v2_5` で確実に効くタグ:
 
 - [`content-category-framework.md`](./content-category-framework.md) — カテゴリの考え方
 - [`higgsfield-skill-guide.md`](./higgsfield-skill-guide.md) — skill 運用ガイド
-- [`../rules/create-advertisement-with-higgsfield-rules.md`](../rules/create-advertisement-with-higgsfield-rules.md) — R-H14 / R-H15 / R-H16 / R-H17
+- [`../rules/create-advertisement-with-higgsfield-rules.md`](../rules/create-advertisement-with-higgsfield-rules.md) — R-H14 / R-H15 / R-H16 / R-H17 / R-H18

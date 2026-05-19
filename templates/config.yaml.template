@@ -68,15 +68,20 @@ higgsfield:
     max_iterations_per_shot: 3  # 初回 + リトライ最大2回
   video:
     model_preference:
-      - "seedance2"
-      - "seedance2-fast"
+      - "seedance2"           # 1st: Plus plan 以上必須
+      - "kling2_6"            # 2nd: Starter plan で利用可、seedance ブロック時の fallback
+      - "seedance2-fast"      # 3rd: Plus plan 以上、低品質高速版
     one_shot: true            # true: 動画失敗時は静止画fallback、再生成しない
     fallback_to_static: true
   tts:
+    # R-H18: TTS は opt-in。デフォルト false (lite モード) でナレーション台本のみ .md に生成
+    #        true にすると ElevenLabs API で自動生成 + ffmpeg post-master (R-H15/16 適用)
+    enabled: false            # default OFF（lite モード）。手動で narration を当てる前提
     provider: "elevenlabs"
-    voice_id: ""              # ElevenLabs voice ID を貼る（未設定なら起動時停止）
+    voice_id: ""              # ElevenLabs voice ID（enabled: true 時に必須）
     model_id: "eleven_turbo_v2_5"
   bgm:
-    required: true            # false なら BGM 配置なしでも動く（無音）
+    # R-H18: BGM 自動埋込も opt-in。デフォルト false で CapCut 等で手動付与
+    required: false           # default OFF。true なら assets/bgm/*.mp3 を <Audio> で全 shot 通敷
     selection: "auto"         # auto / explicit。explicit なら下の explicit_file 指定
     # explicit_file: "energetic-01.mp3"
