@@ -1,0 +1,102 @@
+# voice-spec / feature
+
+機能訴求カテゴリの音声執行仕様。`core.md` の `## コンテンツカテゴリ` `### feature` で
+定義された容器に対する声色の具体化。
+
+## Voice Persona
+
+- **年齢感**：（30 代前半〜半ば / 実感あるユーザー層と同世代）
+- **性別感**：穏やかな女性 / gender-neutral
+- **関係性**：UX に詳しい同僚 / ガイド役。「教える」ではなく「一緒に見せる」立場
+- **距離感**：肩越しにスマホを覗かれている距離（worldview より近め）
+- **比喩**：Apple Keynote のプロダクト紹介 × 朝の NHK ニュースの落ち着き
+
+## Tone Keywords (max 5)
+
+`calm-but-clear` / `friendly-explanatory` / `confident-without-pressure` / `crisp-articulation` / `slightly-faster-than-worldview`
+
+## Pace Target
+
+| 指標 | 目標値 | 備考 |
+|---|---|---|
+| chars/min | **340〜380** | worldview より速く、TikTok 標準にわずかに届かない丁度感 |
+| talk-time ratio | **55〜65%** | 機能を理解させるため発話比率高め |
+| pause budget | **1 shot あたり 0.4s 以上の `<break>` を 1 箇所** | 機能の "before/after" 切替に置く |
+| 1 文の長さ | **18〜28 chars / 句点** | 情報密度を上げて、ステップを明示 |
+
+## Prosody Patterns
+
+機能名 / 動作キーワードを強調:
+
+```xml
+<prosody pitch="+1st" rate="1.0">{{FEATURE_NAME_1}}</prosody>
+<prosody pitch="+1st" rate="1.0">{{FEATURE_NAME_2}}</prosody>
+<prosody rate="0.95">{{STEP_1}}、</prosody><break time="0.2s"/><prosody rate="0.95">{{STEP_2}}、</prosody><break time="0.2s"/><prosody rate="0.95">{{STEP_3}}。</prosody>
+```
+
+ElevenLabs voice_settings 推奨:
+
+```json
+{
+  "stability": 0.55,
+  "similarity_boost": 0.75,
+  "style": 0.20,
+  "use_speaker_boost": true
+}
+```
+
+> worldview より stability 下げて、機能説明の自然な抑揚を引き出す。
+
+## Recommended ElevenLabs Voices
+
+| 優先 | voice | 提供 | 備考 |
+|---|---|---|---|
+| 1st | （例: Harune） | Voice Library | Japanese-native、calm clarity |
+| 2nd | （worldview と同じ声） | Professional / Voice Library | category 跨ぎでブランド統一感重視 |
+| fallback | premade | premade | 固有名詞・機能名は `<phoneme>` で発音矯正 |
+
+## Taboos
+
+- 「業界初」「最強」「圧倒的」等の煽り語
+- 「絶対」「必ず」等の断定的押し付け
+- 「ぜひ」「ぜひぜひ」のような勧誘語
+- ためらい（"えっと" "あの" 等）と早口の混在
+- 競合実名比較
+- 「タイパ」「コスパ」等の流行語
+
+## Reference Brands / Creators
+
+- **Apple Keynote** の "calm explainer"
+- **Linear** のプロダクトデモ（fast & focused）
+- **Notion** のオンボーディング動画
+- **NHK あさイチ・気象キャスター** の説明調
+
+## BGM / SFX Policy
+
+- **BGM**：（用途に応じ。ASMR 路線なら禁止、SaaS デモなら soft ambient pad 許容）
+- **Room tone**：必須、-30dB
+- **UI SFX**：許容、最小限。例：タップ音、紙の擦れ音、完了時の柔らかいベル（一度のみ）
+
+## Exemplar Phrases (SSML-ready)
+
+```text
+<!-- 機能の宣言 -->
+<prosody pitch="+1st" rate="1.0">{{FEATURE_HEADLINE}}</prosody><break time="0.4s"/>。
+
+<!-- ステップの実演 -->
+<prosody rate="0.95">{{STEP_VERB_1}}、</prosody><break time="0.2s"/><prosody rate="0.95">{{STEP_VERB_2}}。</prosody>
+
+<!-- 完了と効果 -->
+{{TIME_TO_DONE}}で、<break time="0.3s"/>{{COMPLETION_PHRASE}}<break time="0.5s"/>。
+
+<!-- CTA -->
+<prosody rate="0.92">{{BRAND_NAME}}.</prosody><break time="0.4s"/>{{CTA_PHRASE}}<break time="0.4s"/>。
+```
+
+## Validation hints
+
+- [ ] 機能名・動作キーワードが明らかに目立つか
+- [ ] ステップの間に 0.2〜0.4s の break が確保されているか
+- [ ] worldview より自然に「速く」聞こえるが、まだ煽りを感じない範囲か
+- [ ] 「→」の遷移感が音で表現されているか
+- [ ] CTA の語尾が断定で終わっているか、押し付けがましくないか

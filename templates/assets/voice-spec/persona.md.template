@@ -1,0 +1,111 @@
+# voice-spec / persona
+
+ペルソナ pain 訴求カテゴリの音声執行仕様。`core.md` の `## コンテンツカテゴリ` `### persona` で
+定義された容器に対する声色の具体化。**3 カテゴリ中、最も「個人的・一人称的」な声**。
+
+## Voice Persona
+
+- **年齢感**：viewer ペルソナと同世代
+- **性別感**：variation ごとに切り替え可（pain 当事者の性別と一致）
+- **関係性**：viewer 自身の内的モノローグの代弁者。「友人」でも「ガイド」でもなく、
+  **「観ている人の頭の中の声」**
+- **距離感**：自分のスマホを耳元に持ってきた近接感（worldview よりさらに近い）
+- **比喩**：TikTok POV モノローグ系クリエイターの "つぶやき" 質感、短編ドキュメンタリーの
+  インタビュー素材の赤裸々さ。ナレーターっぽさは完全に消す
+
+## Tone Keywords (max 5)
+
+`first-person` / `peer-empathy` / `slightly-breathy` / `confessional` / `barely-conversational`
+
+## Pace Target
+
+| 指標 | 目標値 | 備考 |
+|---|---|---|
+| chars/min | **300〜350** | worldview と feature の中間 |
+| talk-time ratio | **50〜60%** | pain を語る分は密度上げ、relief は静かに |
+| pause budget | **1 shot あたり 0.5s 以上の `<break>` を最低 2 箇所** | ためらい・気づき・転換の場面 |
+| 1 文の長さ | **12〜22 chars / 句点** | 短く、息を切る、書き言葉的ではなく口語的 |
+
+## Prosody Patterns
+
+感情の起伏を明示:
+
+```xml
+<!-- pain（やや沈んだ pitch） -->
+<prosody pitch="-1st" rate="0.95">{{PAIN_PHRASE}}</prosody><break time="0.6s"/>。
+
+<!-- realization（pitch やや上がる、間を取って気づきを演出） -->
+<break time="0.5s"/>...あ、<break time="0.3s"/><prosody pitch="+2st" rate="0.95">{{INSIGHT_PHRASE}}</prosody>。
+
+<!-- relief（穏やかに戻る） -->
+<prosody pitch="-1st" rate="0.92">{{RELIEF_PHRASE}}</prosody><break time="0.5s"/>。
+```
+
+ElevenLabs voice_settings 推奨:
+
+```json
+{
+  "stability": 0.50,
+  "similarity_boost": 0.75,
+  "style": 0.40,
+  "use_speaker_boost": true
+}
+```
+
+> stability 一番低め、style 一番高め。感情幅と個人性を確保する。
+
+## Recommended ElevenLabs Voices
+
+| 優先 | voice | 提供 | 備考 |
+|---|---|---|---|
+| 1st | （例: Harune） | Voice Library | Japanese-native、控えめなトーン |
+| 2nd | （例: Shin） | Voice Library | 男性 persona variation で使用 |
+| 3rd | （worldview と共有） | Professional / Library | 「同じ人が違うシーンで語っている」演出 |
+| fallback | premade | premade | non-native だが緊急時のみ |
+
+**variation ごとに persona の性別を明示**：`variation_note` に `persona_gender: female|male|neutral` を含めると skill が voice 自動選択できる。
+
+## Taboos
+
+- アナウンサー口調（最大の NG）
+- 「ぜひ」「みなさん」等の broadcasting 語
+- 過剰な感情演技（pain 強調しすぎ NG、relief 喜びすぎ NG）
+- 完璧な日本語の発音（一部に hedge を残す）
+- 競合実名・攻撃語
+
+## Reference Brands / Creators
+
+- **TikTok の "1 日のリアル" 系 POV クリエイター**
+- **ドキュメンタリー番組のインタビュー素材**（情熱大陸、NHK プロフェッショナル）
+- **Spotify Wrapped のナレーション**（あなた個人に向けた親密さ）
+- **Apple "Shot on iPhone"** の utiliser-generated 風 narration
+
+## BGM / SFX Policy
+
+- **BGM**：基本禁止（worldview/feature と統一）
+- **Room tone**：必須、-30dB、シーンと一致する素材を選ぶ
+- **diegetic SFX**：許容、シーンと一致するもののみ
+
+## Exemplar Phrases (SSML-ready)
+
+```text
+<!-- pain monologue -->
+<break time="0.3s"/>{{TIME_OF_DAY}}、<break time="0.3s"/>{{PAIN_OBSERVATION}}<break time="0.5s"/>。<prosody pitch="-1st" rate="0.95">{{SELF_CRITICISM}}</prosody><break time="0.6s"/>。
+
+<!-- realization beat -->
+<break time="0.5s"/>...あ、<break time="0.4s"/><prosody pitch="+2st" rate="0.95">{{KEY_REALIZATION}}</prosody>なら<break time="0.3s"/>、できるかも<break time="0.5s"/>。
+
+<!-- relief -->
+<prosody pitch="-1st" rate="0.92">{{RELIEF_PHRASE}}</prosody><break time="0.4s"/>。それだけで、<break time="0.4s"/>{{DAY_AFFIRMATION}}<break time="0.5s"/>。
+
+<!-- CTA -->
+<prosody rate="0.90">{{BRAND_NAME}}.</prosody><break time="0.5s"/>{{CTA_SOFT}}<break time="0.5s"/>。
+```
+
+## Validation hints
+
+- [ ] アナウンサー / ナレーター感がゼロか
+- [ ] pain → realization → relief の 3 段階が音の起伏で識別できるか
+- [ ] persona 性別が viewer 想定と一致しているか
+- [ ] hedge（"あ、" "..." 等）が 1 つ以上自然に入っているか
+- [ ] CTA が押し付けがましくないか（つぶやき調を維持）

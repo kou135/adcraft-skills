@@ -10,6 +10,13 @@ remotion/src/compositions/*
 .env.local
 .env.*.local
 
+# secrets — never commit (R-H17 強化 / API キー流出防止)
+.claude.json
+.claude/.credentials
+secrets.json
+*.key.json
+.envrc
+
 # Build artifacts
 dist/
 build/
