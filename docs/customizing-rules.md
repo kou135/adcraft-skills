@@ -2,6 +2,8 @@
 
 `rules/create-advertisement-rules.md` は Skill B（`create-advertisement`）が**実行のたびに最初に読み込む**不変ルールです。生成される動画の品質と一貫性を担保する役割があります。
 
+Skill C を使う場合は **`rules/create-advertisement-with-higgsfield-rules.md`** が同様の役割を持ちます（R-H1〜R-H17、v1.1.0）。本ドキュメントの考え方は両ルールセットに適用できます。
+
 ## いつカスタマイズするか
 
 以下のような場合：

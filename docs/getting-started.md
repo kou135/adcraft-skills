@@ -97,6 +97,16 @@ extract-product-ui skill で /path/to/my-nextjs-project を mynote という名�
 
 抽出後、`products/mynote/core.md` を編集してマーケ方針を記入し、再度 `create-advertisement` を呼び出します。
 
+## 6. 上位 Skill C（実写級 + ナレーション）に進む（任意）
+
+Skill B でイラスト系広告が回るようになったら、Skill C で実写級 + ナレーション付きの動画にステップアップできます。
+
+**前提**:
+- Higgsfield 課金（Starter $15/月〜）+ ElevenLabs 課金（Starter $5/月〜）
+- `products/<name>/` の中身に `assets/voice-spec/` と `assets/reference/index.md` を整備
+
+詳細は [`higgsfield-skill-guide.md`](./higgsfield-skill-guide.md)、執筆指針は [`voice-spec-design.md`](./voice-spec-design.md)、カテゴリ設計の哲学は [`content-category-framework.md`](./content-category-framework.md) を参照。
+
 ---
 
 ## トラブルシューティング

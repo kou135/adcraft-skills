@@ -20,9 +20,10 @@ set -euo pipefail
 
 INPUT="${1:-}"
 OUTPUT="${2:-}"
+TARGET_LUFS="${3:--16}"  # voice-spec 側で -14 等にオーバーライド可（R-H16 default -16）
 
 if [[ -z "$INPUT" || -z "$OUTPUT" ]]; then
-  echo "usage: $0 <input.mp3> <output.mastered.mp3>" >&2
+  echo "usage: $0 <input.mp3> <output.mastered.mp3> [target_lufs=-16]" >&2
   exit 1
 fi
 
@@ -40,13 +41,13 @@ REMOTION_FFMPEG="$REMOTION_FFMPEG_DIR/ffmpeg"
 # フル ffmpeg を優先（brew 等でインストール済み）
 if command -v ffmpeg >/dev/null 2>&1; then
   MODE="full"
-  FILTER="highpass=f=85,equalizer=f=2500:t=q:w=1.4:g=2,acompressor=threshold=-18dB:ratio=3:attack=5:release=80,loudnorm=I=-16:TP=-1.5:LRA=11"
+  FILTER="highpass=f=85,equalizer=f=2500:t=q:w=1.4:g=2,acompressor=threshold=-18dB:ratio=3:attack=5:release=80,loudnorm=I=${TARGET_LUFS}:TP=-1.5:LRA=11"
   ffmpeg -hide_banner -loglevel error -i "$INPUT" -af "$FILTER" -y "$OUTPUT"
 elif [[ -x "$REMOTION_FFMPEG" ]]; then
   MODE="partial"
   # Remotion bundled: loudnorm のみ
   export DYLD_FALLBACK_LIBRARY_PATH="$REMOTION_FFMPEG_DIR"
-  "$REMOTION_FFMPEG" -hide_banner -loglevel error -i "$INPUT" -af "loudnorm=I=-16:TP=-1.5:LRA=11" -y "$OUTPUT"
+  "$REMOTION_FFMPEG" -hide_banner -loglevel error -i "$INPUT" -af "loudnorm=I=${TARGET_LUFS}:TP=-1.5:LRA=11" -y "$OUTPUT"
 else
   echo "failed"
   echo "error: no ffmpeg available (neither system nor Remotion bundled)" >&2
@@ -66,7 +67,7 @@ measure_lufs() {
     export DYLD_FALLBACK_LIBRARY_PATH="$REMOTION_FFMPEG_DIR"
   fi
   # loudnorm の analyze pass で integrated LUFS を取得
-  "$ffmpeg_bin" -hide_banner -nostats -i "$file" -af "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json" -f null - 2>&1 \
+  "$ffmpeg_bin" -hide_banner -nostats -i "$file" -af "loudnorm=I=${TARGET_LUFS}:TP=-1.5:LRA=11:print_format=json" -f null - 2>&1 \
     | awk '/"input_i"/ { gsub(/[",]/, ""); print $2 }' \
     | head -1
 }
@@ -81,6 +82,6 @@ cat >&2 <<EOF
   "mode": "$MODE",
   "raw_integrated_lufs": $RAW_LUFS,
   "mastered_integrated_lufs": $MASTERED_LUFS,
-  "target_lufs": -16.0
+  "target_lufs": ${TARGET_LUFS}.0
 }
 EOF

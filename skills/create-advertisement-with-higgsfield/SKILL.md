@@ -121,24 +121,38 @@ const cost_tracker = createCostTracker({
    - Step 8 で `<Img src=shot-N.png>` + `<ZoomIn>` を使う
 7. `commit(tracker, request_id)`（成功時のみ）/ `cancel(tracker)`（致命破綻時のみ）
 
-### Step 7. ナレーション TTS 生成（ElevenLabs、Step 5/6 と並列実行可）— R-H7, R-H15
+### Step 7. ナレーション TTS 生成（ElevenLabs、Step 5/6 と並列実行可）— R-H7, R-H15, R-H18
 
-1. **cost guard**：`shouldAbort(tracker, estimateTtsCost(全narration合計char数))`
-2. **voice 選定**：voice-spec の `Recommended ElevenLabs Voices` の優先順位に従い、利用可能な最上位 voice を選択。402 paid_plan_required で 1st が使えなければ 2nd → 3rd → fallback と順に試行、選択結果と理由を cost-report.json の `notes` に記録
-3. **voice_settings** は voice-spec の **「ElevenLabs voice_settings 推奨」** セクションから literal 取得：
+> **R-H18: `config.yaml.higgsfield.tts.enabled` (default `false`) で auto / lite モード切替**
+
+#### lite モード（`tts.enabled: false`、デフォルト）
+
+Step 7 全体を **スキップ**。`audio_mode: "manual"` を manifest に記録予約。voice-spec は引き続き Step 10 のナレーション台本生成のガイドとして読み込む（R-H14 維持）。
+
+#### auto モード（`tts.enabled: true`）
+
+1. **事前検証**：`tts.voice_id` が空なら `TTS_VOICE_ID_MISSING` で fail-fast
+2. **cost guard**：`shouldAbort(tracker, estimateTtsCost(全narration合計char数))`
+3. **voice 選定**：voice-spec の `Recommended ElevenLabs Voices` の優先順位に従い、利用可能な最上位 voice を選択。402 paid_plan_required で 1st が使えなければ 2nd → 3rd → fallback と順に試行、選択結果と理由を cost-report.json の `notes` に記録
+4. **voice_settings** は voice-spec の **「ElevenLabs voice_settings 推奨」** セクションから literal 取得：
 
    ```json
    { "stability": 0.70, "similarity_boost": 0.75, "style": 0.30, "use_speaker_boost": true }
    ```
 
    ハードコード禁止、必ず spec から読む（R-H15）。
-4. **shot ごとに分割して TTS 呼び出し**（カット境界が明確になるため、合体読みは禁止）：
+5. **shot ごとに分割して TTS 呼び出し**（カット境界が明確になるため、合体読みは禁止）：
    各 shot の `narration_text_ssml`（Step 3 で準備、SSML 込み）を 1 呼び出し → `.assets/<id>/narration-N.mp3`
-5. `reserve(tracker, estimateTtsCost(chars_per_shot), { step: "tts", model: cfg.higgsfield.tts.model_id, provider: "elevenlabs", shot_index })` を shot 単位で
-6. `commit(tracker)` を各 shot 成功時
-7. **失敗時**：voice fallback を試す（R-H15）。それでも失敗なら `cancel(tracker)`、無音で続行、`issues.json` に `tts_failed:{shot_index}` 記録
+6. **shot 尺整合性チェック**（推奨、将来 R-H19）：生成された mp3 の duration が `shot_duration_sec` を超えていたら警告 + `issues.json` に `narration_overflow:{shot_index}:{actual_sec}` を記録（fail はしない、視聴者は cut off 動画を見る）
+7. `reserve(tracker, estimateTtsCost(chars_per_shot), { step: "tts", model: cfg.higgsfield.tts.model_id, provider: "elevenlabs", shot_index })` を shot 単位で
+8. `commit(tracker)` を各 shot 成功時
+9. **失敗時**：voice fallback を試す（R-H15）。それでも失敗なら `cancel(tracker)`、無音で続行、`issues.json` に `tts_failed:{shot_index}` 記録
 
-### Step 7.5. ナレーションのポストマスター（ffmpeg、必須） — R-H16
+### Step 7.5. ナレーションのポストマスター（ffmpeg、auto モードのみ） — R-H16, R-H18
+
+> **lite モード（`tts.enabled: false`）のときは Step 7.5 全体を スキップ**
+
+auto モード時のみ実行：
 
 各 `narration-N.mp3`（raw）を mastered 化：
 
@@ -156,11 +170,24 @@ ffmpeg -i .assets/<id>/narration-N.mp3 -af "\
 3. raw と mastered の **integrated LUFS** を `ffmpeg -af loudnorm=...:print_format=json` の出力からパース、`cost-report.json.audio.shots[i]` に記録
 4. 失敗時（exit code ≠ 0）は `POST_MASTER_FAILED:{shot_index}` で fail。**raw mp3 のままで Step 8 に進むのは禁止**
 
-### Step 8. Remotion `.tsx` 生成
+### Step 8. Remotion `.tsx` 生成 — R-H18
 
 Claude が `output/<product>/<date>/<id>.tsx` を直接書く。命名は R-H13 に従い `<product>-hf-reel-<index>`（例：`taskflow-hf-reel-1`）。
 
-骨子（**Audio は必ず `.mastered.mp3` を参照、R-H16**）：
+**`tts.enabled` / `bgm.required` の組合せで埋込内容を切り替え**:
+
+| `tts.enabled` | `bgm.required` | 埋込内容 |
+|---|---|---|
+| `false` (lite) | `false` | 動画/静止画 + `<TextOverlay>` のみ。音声なし |
+| `false` (lite) | `true` | 動画/静止画 + `<TextOverlay>` + BGM `<Audio>` |
+| `true` (auto) | `false` | 動画/静止画 + `<TextOverlay>` + narration `<Audio>` |
+| `true` (auto) | `true` | フル：動画 + テロップ + narration `<Audio>` + BGM `<Audio>` |
+
+**ガード**:
+- `tts.enabled: false` のとき `<Audio src=...narration-N.mastered.mp3 />` を埋め込んだら `LITE_MODE_VIOLATION:tts_called` で fail
+- `bgm.required: false` のとき BGM `<Audio>` を埋め込んだら `LITE_MODE_VIOLATION:bgm_embedded` で fail
+
+骨子（auto + BGM フル例。**Audio は必ず `.mastered.mp3` を参照、R-H16**）：
 
 ```tsx
 import { AbsoluteFill, Audio, Sequence, Video, Img, staticFile } from "remotion";
@@ -197,6 +224,29 @@ export const TaskflowHfReel1 = () => (
 従い、特に worldview / persona では **frame 5〜10 程度の早出し**を推奨（冒頭 3 秒の hook 強化）。
 feature では UI 操作の見せ場と同期させるため frame 15〜25 が妥当。
 
+#### lite モード骨子例（`tts.enabled: false, bgm.required: false`）
+
+最も簡素な構成。narration / BGM は外部編集で当てる前提:
+
+```tsx
+import { AbsoluteFill, Sequence, Video, Img, staticFile } from "remotion";
+import { ZoomIn } from "../../remotion/src/shared/transitions";
+import { TextOverlay } from "../../remotion/src/shared/TextOverlay";
+
+export const TaskflowHfReel1 = () => (
+  <AbsoluteFill>
+    {/* BGM / narration は埋め込まない (lite mode) */}
+    <Sequence from={0} durationInFrames={150}>
+      <Video src={staticFile("output/taskflow/2026-05-17/.assets/taskflow-hf-reel-1/shot-0.mp4")} />
+      <TextOverlay text="..." startAt={15} endAt={120} />
+    </Sequence>
+    {/* ... 他 shot も同様 */}
+  </AbsoluteFill>
+);
+```
+
+完成 MP4 は無音。視聴者向けには CapCut / Premiere 等で `.md` のナレーション台本セクションを参考に手動で narration / BGM を当てる。
+
 `remotion/src/Root.tsx` に Composition を登録：
 
 ```tsx
@@ -224,14 +274,23 @@ feature では UI 操作の見せ場と同期させるため frame 15〜25 が�
 6. `<id>.preview.png` として frame 0 をコピー
 7. `<id>.validation.json` に構造化結果を atomic write
 
-### Step 10. 投稿コピー + manifest + cost-report — R-H10, R-H12, R-H16, R-H17
+### Step 10. 投稿コピー + manifest + cost-report — R-H10, R-H12, R-H16, R-H17, R-H18
 
-1. **投稿コピー（R-H12 = R13継承）**：`<id>.md` を生成（フロントマター + フック + 本文 + ハッシュタグ 5 本）。`variation_note` 先頭に `[category]` タグが含まれる（R-H14）。`lib/manifest.ts` の writeManifestAtomic と同じ atomic 書き込みを使う。
-2. **manifest.json**（atomic write）：`engine: "higgsfield"`、`rules_version: "1.0.0"`、`higgsfield_rules_version: "1.1.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に `category` フィールドを追加（R-H14）。
-3. **cost-report.json**（atomic write）：`toReport(tracker, {session_started_at, session_ended_at})` の戻り値に `audio.loudness` セクションを足して書く（R-H16）。**成功 / 失敗 / abort のいずれでも必ず出力**（R-H10）。
-4. **issues.json**：途中で記録した issue がある場合のみ書く。R-H17 read-only 違反検知時もここに記録。
+1. **投稿コピー（R-H12 = R13継承 + R-H18 拡張）**：`<id>.md` を生成。共通項目はフロントマター + フック + 本文 + ハッシュタグ 5 本（`variation_note` 先頭に `[category]` タグ、R-H14）。
+   - **lite モード時（`tts.enabled: false`）は加えて「## ナレーション台本」セクションを必ず付ける**（R-H18）。shot 別に:
+     - シーン要約 / 想定テキスト（日本語）/ 想定発話時間 / 強調キーワード / SSML 例 / 推奨 voice / 推奨音量
+     - voice-spec/{category}.md の Pace Target / Prosody Patterns / Exemplar Phrases を参照
+   - 末尾に「CapCut / Premiere 等での組み立て手順」を 5 ステップ前後で
+   - 欠落していたら `MISSING_NARRATION_SCRIPT` で fail
+   - `lib/manifest.ts` の writeManifestAtomic と同じ atomic 書き込みを使う
+2. **manifest.json**（atomic write）：`engine: "higgsfield"`、`rules_version: "1.0.0"`、`higgsfield_rules_version: "1.2.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に以下を追加：
+   - `category`（R-H14）
+   - **`audio_mode: "manual" | "auto"`**（R-H18、`tts.enabled` の値に応じて）
+   - `bgm_embedded: true | false`（R-H18、`bgm.required` の値に応じて）
+3. **cost-report.json**（atomic write）：`toReport(tracker, {session_started_at, session_ended_at})` の戻り値に `audio.loudness` セクションを足して書く（auto モード時のみ実数値、lite モード時は `null`）（R-H16）。**成功 / 失敗 / abort のいずれでも必ず出力**（R-H10）。
+4. **issues.json**：途中で記録した issue がある場合のみ書く。R-H17 read-only 違反検知時もここに記録。R-H18 違反（lite モードでの誤 TTS 呼出等）もここに記録。
 5. **R-H17 read-only 監査**：Step 1 で記録した `assets_mtime_snapshot.json` を再チェック、変更されていれば `READ_ONLY_VIOLATION:{path}` を issues.json に記録（停止はしない）。
-6. **中間ファイル**：`.assets/<id>/` は basic 残す（`narration-N.mp3` + `narration-N.mastered.mp3` の両方を保持、A/B 比較用）。`strict_mode: true` のみ raw を削除。
+6. **中間ファイル**：`.assets/<id>/` は basic 残す（auto モードでは `narration-N.mp3` + `narration-N.mastered.mp3` の両方を保持、A/B 比較用。lite モードでは narration 系ファイルなし）。`strict_mode: true` のみ raw を削除。
 
 ### Step 11. stdout 終了サマリ
 
@@ -268,6 +327,10 @@ R-H に書かれた禁則に加えて：
 - ❌ raw mp3 を `.tsx` から直参照（必ず `.mastered.mp3`、R-H16）
 - ❌ ffmpeg ポストマスター工程を「軽量化のため」省く（R-H16）
 - ❌ autonomous run 中に voice-spec / reference を書き換える（R-H17）
+- ❌ `tts.enabled: false` で ElevenLabs MCP を呼ぶ（R-H18 lite モード違反）
+- ❌ `bgm.required: false` のとき .tsx に BGM `<Audio>` を埋め込む（R-H18 違反）
+- ❌ lite モードで `.md` のナレーション台本セクションを省略（R-H18）
+- ❌ lite モードの動画に narration が無いことを伝えず、消費者に "音声付き完成品" と誤認させる出力
 
 ## ヘッドレス実行コマンド（cron 用）
 
