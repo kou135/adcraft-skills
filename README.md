@@ -78,7 +78,7 @@ claude -p "create-advertisement skill で examples/product-sample のリール�
 
 ---
 
-## 提供される 2 つの Skill
+## 提供される 3 つの Skill
 
 ### `extract-product-ui`（Skill A）
 
@@ -90,11 +90,40 @@ claude -p "create-advertisement skill で examples/product-sample のリール�
 
 ### `create-advertisement`（Skill B）
 
-`products/<name>/` の設定とコンポーネントを使って、Remotion で広告動画を複数本生成 → 視覚検証 → 自己修正 → MP4 出力する。
+`products/<name>/` の設定とコンポーネントを使って、Remotion で広告動画を複数本生成 → 視覚検証 → 自己修正 → MP4 出力する。**Remotion 純粋実装。外部 AI サービス不要、無料で完結**。
 
 - **使用頻度**：高い（手動 / cron）
-- **不変ルール**：[`rules/create-advertisement-rules.md`](./rules/create-advertisement-rules.md)（v1.0.0 / 12 ルール）
+- **コスト**：$0（ローカル Remotion レンダリングのみ）
+- **得意分野**：イラスト系・タイポグラフィ重視・ブランド世界観構築
+- **不変ルール**：[`rules/create-advertisement-rules.md`](./rules/create-advertisement-rules.md)（v1.0.0 / R1〜R13）
 - **詳細**：[`skills/create-advertisement/SKILL.md`](./skills/create-advertisement/SKILL.md)
+
+### `create-advertisement-with-higgsfield`（Skill C）
+
+Skill B の上位互換。**Higgsfield MCP（GPT Image 2 + Seedance 2.0 等）と ElevenLabs MCP（TTS）** を統合し、実写級リファレンス画像 + 動画 + ナレーション付きの広告動画を生成する。
+
+- **使用頻度**：中（実写級 / 音声付きが必要な時）
+- **コスト**：1 リール ~$3-4（Higgsfield ~$3.15 + ElevenLabs ~$0.025）
+- **得意分野**：実写級ビジュアル・ナレーション付き世界観動画・ペルソナ pain 訴求モノローグ
+- **必須前提**：
+  - Higgsfield 有料プラン（Starter $15/月 以上）+ Higgsfield MCP 接続
+  - ElevenLabs 有料プラン（Starter $5/月 以上）+ ElevenLabs MCP 接続
+  - `products/<name>/assets/voice-spec/{category}.md` + `assets/reference/index.md` の整備
+  - `products/<name>/core.md` の `## コンテンツカテゴリ` セクション
+- **不変ルール**：[`rules/create-advertisement-with-higgsfield-rules.md`](./rules/create-advertisement-with-higgsfield-rules.md)（v1.1.0 / R-H1〜R-H17）
+- **詳細**：[`skills/create-advertisement-with-higgsfield/SKILL.md`](./skills/create-advertisement-with-higgsfield/SKILL.md)
+
+### どちらの skill を使う？
+
+| やりたいこと | 推奨 |
+|---|---|
+| まず試してみたい / 無料でやりたい | Skill B（`create-advertisement`） |
+| イラスト・タイポグラフィ系のリール | Skill B |
+| 実写級の映像 + ナレーションが欲しい | Skill C（`create-advertisement-with-higgsfield`） |
+| ペルソナの一人称モノローグ動画 | Skill C |
+| ブランド世界観をプロフェッショナルに表現 | Skill C |
+| 量産（月 10 本以上） | Skill B（コスト 0）|
+| 試験運用 / 高品質少数本 | Skill C |
 
 ---
 
@@ -167,6 +196,145 @@ cd /path/to/adcraft && \
 ```
 
 注：`ANTHROPIC_API_KEY` がセットされていると Claude Code がそちらを優先します。サブスク利用時は明示的に `unset` してください。
+
+---
+
+## コンテンツカテゴリ・フレームワーク（Skill C 専用）
+
+`create-advertisement-with-higgsfield` skill は、`core.md` の `## コンテンツカテゴリ` セクションで定義された **3 種類の容器** にコンテンツを振り分けて生成する。
+
+### なぜカテゴリを分けるのか
+
+同じプロダクトでも、**世界観訴求の動画と機能紹介の動画では、声色・構成・テンポ・ビジュアルすべてが異なる**。これを 1 つの設定で混ぜると、どちらも中途半端になる。カテゴリ別に独立した spec を持つことで、各容器に最適化された生成が可能になる。
+
+### 推奨初期カテゴリ（マーケファネルの 3 段を網羅）
+
+| category | 目的 | マーケファネル位置 |
+|---|---|---|
+| `worldview` | ブランドの世界観・到達したい状態を体感させる | 認知 |
+| `feature` | プロダクトの主機能の "体感" を実演 | 検討 |
+| `persona` | ペルソナのペインを直撃して「これ私だ」を引き出す | 共感深化 |
+
+### ファイル構成
+
+```
+products/<name>/
+├── core.md                            ← ## コンテンツカテゴリ セクションで 3 つを定義
+└── assets/
+    ├── voice-spec/                    ← 各カテゴリの "声色" 仕様
+    │   ├── _index.md                  ← カテゴリ一覧 + 共通制約
+    │   ├── worldview.md               ← 世界観訴求の voice persona / SSML / voice_id
+    │   ├── feature.md                 ← 機能訴求の voice persona / SSML / voice_id
+    │   └── persona.md                 ← ペルソナ pain 訴求の voice persona / SSML / voice_id
+    ├── reference/                     ← 実プロダクト UI のスクショ
+    │   ├── index.md                   ← 画面 → スクショ ファイルの対応表
+    │   ├── home.png
+    │   ├── feature-x.png
+    │   └── ...
+    └── bgm/                           ← 任意（BGM 使用時）
+        └── *.mp3
+```
+
+### variation_note に `[category]` タグを付ける
+
+各 variation の `variation_note` は先頭に `[category]` タグを必ず含める:
+
+```
+[worldview] Higgsfield 版 / 実写級リファレンス画像生成 / ...
+[feature] アプリ操作実演 / "1 日 1 語 → 3 問 → 完了" の体感 / ...
+[persona] 隙間時間の浪費家 視点 / 朝の通勤シーン / ...
+```
+
+タグ無しは `MISSING_CATEGORY_TAG` で fail-fast（R-H14）。
+
+### voice-spec の作り方
+
+`templates/assets/voice-spec/*.md.template` を雛形に、`products/<name>/assets/voice-spec/` 配下にコピー → 中身を本プロダクト用に書き直す。
+
+各 spec は以下 6 セクションが必須:
+
+- `Voice Persona`（年齢感 / 性別感 / 関係性 / 距離感）
+- `Tone Keywords`（max 5、具体的・audio-quality に翻訳可能なもの）
+- `Pace Target`（chars/min / talk-time ratio / pause budget）
+- `Prosody Patterns`（SSML テンプレ）
+- `Taboos`（避けるべき声色 / 表現）
+- `Recommended ElevenLabs Voices`（優先順位リスト）
+
+各 spec は **一度確定したら autonomous 実行中 read-only**（R-H17）。
+
+---
+
+## MCP セットアップ（Skill C 利用時）
+
+Skill C は以下 2 つの MCP server に依存する。事前にセットアップが必要。
+
+### Higgsfield MCP
+
+```bash
+claude mcp add higgsfield --type http --url https://mcp.higgsfield.ai/mcp
+# OAuth 認証フローに従って Higgsfield アカウントと連携
+```
+
+**プラン要件**：
+- **Starter $15/月**：image2 + Seedance 2.0 + kling 等すべて利用可、200 cred（kling 中心で月 ~5 リール）
+- ⚠️ **Seedance 2.0 は地域により制限される可能性あり**。日本ブロックが報告されている。失敗時は R-H5 により静止画 + ZoomIn に自動 fallback されるので致命的ではない
+
+### ElevenLabs MCP
+
+```bash
+# 1. ElevenLabs ダッシュボードで API キーを発行 (https://elevenlabs.io)
+# 2. API キーを環境変数に保存（platxt commit 防止のため env 経由推奨）
+echo 'export ELEVENLABS_API_KEY="sk_xxxxx"' >> ~/.zshenv
+source ~/.zshenv
+
+# 3. MCP server を追加
+claude mcp add elevenlabs --type stdio --command "uvx elevenlabs-mcp" --env ELEVENLABS_API_KEY=$ELEVENLABS_API_KEY
+```
+
+**プラン要件**：
+- **Starter $5/月**：Voice Library アクセス + 商用 OK + 30k char/月（200+ リール分）
+- **Creator $22/月**：Professional Voice Cloning + 121k char（fine-tuning 検討時）
+
+### 接続確認
+
+```bash
+claude mcp list
+# higgsfield: ... ✓ Connected
+# elevenlabs: ... ✓ Connected
+```
+
+両方 `✓ Connected` になれば準備完了。Skill C が R-H1 で起動時に疎通確認する。
+
+---
+
+## セキュリティ注意事項
+
+### API キーの取り扱い
+
+- ❌ `~/.claude.json` に API キーを **平文で書き込まない**。Claude Code MCP 設定の `env` フィールドは `${env:VAR_NAME}` 形式で環境変数参照することを推奨
+- ❌ プロジェクト内の `.env` `.envrc` `secrets.json` 等の機密ファイルを git commit しない（`.gitignore` で防御済み）
+- ❌ Slack / GitHub Issue / Discord 等への貼り付け禁止
+- ✅ ローテーション：万一漏洩が疑われたら **すぐに ElevenLabs / Higgsfield ダッシュボードで該当キーを Revoke + 新規発行**
+
+### `.claude.json` の扱い
+
+Claude Code は `~/.claude.json`（ホームディレクトリ）に MCP 設定を保管する。リポジトリには来ないが:
+
+- このファイルは **絶対にコピーしてリポジトリに入れない**
+- バックアップツール（iCloud / Dropbox / git-managed dotfiles）で同期する場合、その配信先のアクセス制御を確認
+- 共有 PC で Claude Code を使う場合、別アカウント / 別ユーザーで分離
+
+### git 履歴の監査
+
+定期的に履歴を監査:
+
+```bash
+# キー流出の検出（過去全コミット）
+git log --all --full-history -p -G "sk_[a-f0-9]{40,}" | head -30
+git log --all --full-history -p -S "ELEVENLABS_API_KEY" | head -30
+```
+
+ヒットした場合は `git filter-repo` か BFG Repo-Cleaner で履歴クリーンアップ。
 
 ---
 
