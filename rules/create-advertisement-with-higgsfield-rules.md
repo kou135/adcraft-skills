@@ -1,10 +1,15 @@
 # create-advertisement-with-higgsfield Rules
 
-> **Skill `create-advertisement-with-higgsfield` の不変ルール（v1.0.0）**
+> **Skill `create-advertisement-with-higgsfield` の不変ルール（v1.1.0）**
 >
 > Skill は実行のたびに**まず**このファイルを読み込み、内容に従って動画生成を行う。
 > 既存 `create-advertisement-rules.md` の R1-R13 とは独立した R-H 系統を採用。
 > 本ファイルの version は `manifest.json` の `higgsfield_rules_version` に記録される。
+>
+> **変更履歴**：
+> - v1.1.0: 音声品質改修。R-H14（content category & voice-spec 読み込み）、R-H15（SSML
+>   強制）、R-H16（ffmpeg post-master）、R-H17（voice-spec / reference の read-only）を
+>   追加。Step 1 / 7 / 8 への影響あり。
 
 ## ゴール
 
@@ -118,6 +123,86 @@ skill 起動時に以下を順に確認し、1 つでも失敗したら停止す
 - `-hf-` プレフィックスで既存 skill 出力（`taskflow-reel-1`）と衝突回避。
 - Composition id（`remotion/src/Root.tsx`）も同じ命名。
 
+### R-H14. コンテンツカテゴリ & voice-spec の読み込み必須
+
+- 各 variation の `variation_note` は **先頭に `[category]` タグ**を持たねばならない
+  （例：`[worldview] Higgsfield 版 / 実写級リファレンス…`）。タグ無しは `MISSING_CATEGORY_TAG` で fail-fast。
+- 起動時に以下を順に確認、1 つでも失敗したら停止：
+  1. `products/<name>/core.md` 内 `## コンテンツカテゴリ` セクションに該当 `[category]` が定義されている
+  2. `products/<name>/assets/voice-spec/{category}.md` が存在する
+  3. `products/<name>/assets/voice-spec/_index.md` の `カテゴリ一覧` 表に該当 category が掲載されている
+  4. 該当 `{category}.md` に `Voice Persona` / `Tone Keywords` / `Pace Target` / `Prosody Patterns` /
+     `Taboos` / `Recommended ElevenLabs Voices` の 6 セクションが揃っている
+- 同様に `products/<name>/assets/reference/index.md` が存在し、`画面 × 対応写真の対応表` を持っていることを要求。
+- 違反時の reason 例：`MISSING_CATEGORY_TAG` / `CATEGORY_NOT_IN_CORE` / `VOICE_SPEC_MISSING:{category}` /
+  `VOICE_SPEC_INCOMPLETE:{category}:{missing_section}` / `REFERENCE_INDEX_MISSING`
+
+### R-H15. TTS スクリプトの SSML 強制
+
+Step 7（TTS 生成）に渡すスクリプトには以下を**必ず**含める：
+
+- 各 shot のスクリプトに `<break time="x.xs"/>` 最低 1 箇所（voice-spec の `Pace Target.pause budget` 準拠）
+- 各 shot のブランドキーワード / 感情キーワードに `<prosody>` 最低 1 箇所（voice-spec の
+  `Prosody Patterns` セクションのテンプレートを準拠）
+- voice_settings は voice-spec の **「ElevenLabs voice_settings 推奨」** セクションを literal で
+  ElevenLabs MCP に渡す（stability / similarity_boost / style / use_speaker_boost）
+- voice 選定は voice-spec の `Recommended ElevenLabs Voices` の優先順位に従う。1st が利用不可（402
+  paid_plan_required 等）なら 2nd → 3rd → fallback と順に試行、選択結果は cost-report.json の `notes` に記録
+
+違反時：`MISSING_SSML_BREAK` / `MISSING_SSML_PROSODY` / `MISSING_VOICE_SETTINGS` のいずれかで
+fail-fast し、修正後再試行を要求する。
+
+### R-H16. ffmpeg ポストマスター工程の必須化
+
+Step 7（TTS 生成）と Step 8（Remotion `.tsx` 生成）の間に **Step 7.5 ポストマスター** を必ず実行する：
+
+- `narration-N.mp3`（raw、ElevenLabs 出力）→ `narration-N.mastered.mp3`（mastered、配信向け）
+- ffmpeg フィルタチェーン（不変）：
+
+  ```bash
+  ffmpeg -i in.mp3 -af "\
+    highpass=f=85,\
+    equalizer=f=2500:t=q:w=1.4:g=2,\
+    acompressor=threshold=-18dB:ratio=3:attack=5:release=80,\
+    loudnorm=I=-16:TP=-1.5:LRA=11\
+  " -y out.mp3
+  ```
+
+- 効果：
+  - 85Hz 以下の低域ノイズ除去
+  - 2.5kHz +2dB プレゼンス boost（モバイル環境でも子音が抜ける）
+  - soft compression で音量差を圧縮
+  - **-16 LUFS** に loudness 正規化（TikTok / Instagram / YouTube 共通標準）
+- Step 8 の `.tsx` 内 `<Audio>` は **必ず `.mastered.mp3` を参照**する（raw mp3 直参照は禁止）
+- 各カットの raw と mastered の loudness 数値を `cost-report.json` の `audio.loudness` に記録：
+
+  ```json
+  "audio": {
+    "loudness_target_lufs": -16.0,
+    "shots": [
+      { "index": 0, "raw_integrated_lufs": -24.3, "mastered_integrated_lufs": -16.1 },
+      ...
+    ]
+  }
+  ```
+
+- ffmpeg が見つからない / 実行失敗時：`POST_MASTER_FAILED` で fail（raw mp3 のままの render は禁止）。
+  ffmpeg は Remotion が依存しているためほぼ確実に存在するが、明示的にチェックする。
+
+### R-H17. voice-spec & reference は autonomous run 中 read-only
+
+- autonomous run（headless モード or 自律実行キーワード時）は以下を一切変更しない：
+  - `products/<name>/assets/voice-spec/*.md`
+  - `products/<name>/assets/voice-spec/_index.md`
+  - `products/<name>/assets/reference/*.{png,jpg,jpeg,webp}`
+  - `products/<name>/assets/reference/index.md`
+- 変更が必要な場合は別 skill（将来予定の `refresh-voice-specs` / `refresh-reference-index`）の
+  明示的起動を要求する。
+- 違反検知方法：skill 起動前にこれら ファイルの mtime を記録、終了前に再チェック。変更されて
+  いれば `READ_ONLY_VIOLATION:{path}` で警告（停止はしない、issues.json に記録）。
+- これにより「flat TTS の原因が voice-spec を skill が勝手に書き換えていたから」のような
+  事故を構造的に防ぐ。
+
 ## 受入基準
 
 1. `output/<product>/<date>/` に MP4 1 本（MVP 想定）、`.preview.png`、`.md`、`manifest.json`、`issues.json`、`cost-report.json` が揃う
@@ -127,6 +212,10 @@ skill 起動時に以下を順に確認し、1 つでも失敗したら停止す
 5. `cost.spent_usd ≤ cost.limit_usd`
 6. `<id>.md` が R13 フォーマット準拠
 7. 中間素材 `.assets/<id>/` に `shot-plan.yaml` / `shot-N.png` / `shot-N.mp4`（または fallback 記録）/ `narration.mp3` が揃う
+8. **R-H14 準拠**：`variation_note` 先頭に `[category]` タグがあり、`assets/voice-spec/{category}.md` が読み込まれている
+9. **R-H15 準拠**：narration スクリプトに `<break>` と `<prosody>` が最低 1 個ずつ含まれ、voice_settings が voice-spec から literal 取得されている
+10. **R-H16 準拠**：`narration-N.mastered.mp3` が出力され、`.tsx` がそれを参照している。`cost-report.json` の `audio.loudness` に raw / mastered の LUFS が記録されている
+11. **R-H17 準拠**：voice-spec / reference の mtime が起動前後で同一（変更されていない）
 
 ## アンチパターン
 
@@ -140,3 +229,9 @@ skill 起動時に以下を順に確認し、1 つでも失敗したら停止す
 - ❌ Higgsfield 側の `state: nsfw` を握り潰して通す
 - ❌ R10 違反（配信処理を「ついでに」実装）
 - ❌ 既存 `create-advertisement` 出力ファイルと衝突する命名
+- ❌ `variation_note` の `[category]` タグ無しで TTS 生成に進む（R-H14）
+- ❌ プレーンテキストのまま ElevenLabs に渡す（`<break>` `<prosody>` 抜き、R-H15）
+- ❌ voice_settings をハードコード（voice-spec の値を literal 参照すること、R-H15）
+- ❌ raw mp3 を `.tsx` から直参照する（必ず `.mastered.mp3` 経由、R-H16）
+- ❌ ffmpeg ポストマスター工程をスキップする（R-H16）
+- ❌ autonomous run 中に voice-spec / reference のファイルを書き換える（R-H17）

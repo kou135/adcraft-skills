@@ -49,6 +49,59 @@
 - 例：Notion 公式の Instagram 広告のような、画面切り替えで使い心地を見せるテイスト
 - 例：Linear の "fast & focused" 表現
 
+## コンテンツカテゴリ（higgsfield skill 利用時必須）
+
+> `訴求の軸` が「**何を**優先して語るか」のメッセージ優先順位だとすれば、コンテンツカテゴリ
+> は「その語りを**どの容器**で届けるか」の執行方針です。各カテゴリは独立した執行レイヤ
+> （`assets/voice-spec/{category}.md` ほか）を持ち、変奏（`variation_note`）の先頭に
+> `[category]` タグで明示します。
+>
+> 推奨は worldview / feature / persona の 3 カテゴリで始めること（マーケファネルの認知 → 検討 → 共感を網羅）。
+> 必要なら proof / comparison / seasonal 等を追加可能。
+
+### worldview — 世界観訴求
+
+- **目的：** （ブランドの世界観・到達したい状態を体感させる）
+- **観るモーメント：** （いつ・どこで観られたいか）
+- **期待アクション：** （認知 → 保存 / シェア / 後日 DL）
+- **主訴求軸：** （上記「訴求の軸」のどれを中心にチャネルするか）
+- **構成パターン：** pain glimpse → solution sketch → brand world → 弱 CTA
+- **ビジュアル方針：** （色温度・カメラアングル・人物匿名性 など）
+- **CTA 強度：** 弱め・余韻優先
+- **執行レイヤ：** `assets/voice-spec/worldview.md`
+
+### feature — 機能訴求
+
+- **目的：** （プロダクトの主機能の "体感" を実演する）
+- **観るモーメント：** （既に課題感あり、検討段階のユーザー）
+- **期待アクション：** アプリ DL → 初回登録
+- **主訴求軸：** （第一訴求軸を中心に）
+- **構成パターン：** hook → app demo → CTA 明確
+- **ビジュアル方針：** アプリスクリーン中心、iPhoneFrame、操作演出
+- **CTA 強度：** 明確
+- **執行レイヤ：** `assets/voice-spec/feature.md`
+
+### persona — ペルソナ pain 訴求
+
+- **目的：** ターゲットペルソナのペインを直撃して「あ、これ私だ」を引き出す
+- **観るモーメント：** ペインを感じている瞬間
+- **期待アクション：** 共感 → 「今だけ試す」→ DL
+- **主訴求軸：** 第一・第二訴求軸ミックス（pain → relief の対比）
+- **構成パターン：** pain monologue → realization → relief sketch
+- **ビジュアル方針：** 一人称視点、表情・手のクローズアップ
+- **CTA 強度：** 控えめだが具体的
+- **執行レイヤ：** `assets/voice-spec/persona.md`
+
+### カテゴリ運用ルール
+
+- カテゴリは本ファイルでのみ追加・変更可能。新カテゴリを足す場合は対応する執行レイヤも整備
+- 同一カテゴリ内の variation 差別化は「同じカテゴリ × 違う表現」で展開
+- 一度確定したカテゴリ・執行レイヤは git 履歴を通じて変更履歴を保持し、autonomous 実行中は read-only
+
 ---
 
-**記入完了したら、`config.yaml` を編集して `pnpm exec claude -p "create-advertisement skill で {{PRODUCT_NAME}} の動画を生成して"` を実行してください。**
+**記入完了したら**:
+1. `config.yaml` を編集
+2. `assets/reference/` に実プロダクト UI のスクリーンショット配置 + `index.md` で対応表作成
+3. `assets/voice-spec/{worldview,feature,persona}.md` を執筆（テンプレは `templates/assets/voice-spec/` 参照）
+4. `pnpm exec claude -p "create-advertisement-with-higgsfield skill で {{PRODUCT_NAME}} の動画を生成して"` を実行

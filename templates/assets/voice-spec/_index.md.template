@@ -1,0 +1,26 @@
+# {{PRODUCT_NAME}} voice-spec index
+
+`core.md` の `## コンテンツカテゴリ` で定義された 3 カテゴリの音声執行レイヤ。
+各 spec は **autonomous run 中は read-only**（R-H17）。変更は git commit を通じて履歴を残す。
+
+## カテゴリ一覧
+
+| category | file | 一言サマリ | 主訴求軸 |
+|---|---|---|---|
+| `worldview` | `worldview.md` | （ブランドの世界観体感、最終訴求） | 第二訴求軸（情緒的ベネフィット） |
+| `feature` | `feature.md` | （機能の "やってみたら 3 分" 体感） | 第一訴求軸（効率 / ハードル / 価格 等） |
+| `persona` | `persona.md` | （ペルソナ pain 直撃モノローグ） | 第一・第二訴求軸ミックス |
+
+## 共通制約（全カテゴリで遵守）
+
+- 言語：（メイン言語）。例外的に英語タグを許容する場合は category ごとに明記
+- TTS engine：ElevenLabs `eleven_turbo_v2_5`（SSML `<break>` / `<prosody>` / `<emphasis>` / `<phoneme>` 対応）
+- 出力後処理：ffmpeg post-master 必須（HPF 85Hz + 2.5kHz presence boost +2dB + soft compression + -16 LUFS loudnorm）
+- BGM：（用途に応じて。ASMR コミットなら禁止、SaaS デモなら ambient 許容）
+- 競合実名・煽り語・絵文字過多 等は `core.md` の「避けたい表現」を継承
+
+## skill 側のフェイルセーフ
+
+- `variation_note` 先頭 `[category]` タグ無し → fail-fast（R-H14）
+- 該当 `assets/voice-spec/{category}.md` 不在 → fail-fast
+- voice-spec の `Pace Target` `Prosody Patterns` `Taboos` の 3 セクションが欠落 → fail-fast

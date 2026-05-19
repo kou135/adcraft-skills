@@ -41,16 +41,20 @@ R-H11（既存R12継承）により、プロンプトに `headless` / `自律実
 2. Higgsfield MCP の `list_models()` を呼ぶ → 200 OK & モデル ≥ 1 を確認。失敗なら `MCP_NOT_CONNECTED: higgsfield` で停止し、`claude mcp add` 手順を案内。
 3. ElevenLabs MCP の lightweight call → 200 OK 確認。失敗なら停止。
 
-### Step 1. 商品設定の読み込みと整合性チェック — R-H11
+### Step 1. 商品設定の読み込みと整合性チェック — R-H11, R-H14
 
 各対象商品について：
 
-1. `products/<name>/core.md` を読む（プレースホルダのままならエラー停止）
+1. `products/<name>/core.md` を読む（プレースホルダのままならエラー停止）。同時に `## コンテンツカテゴリ` セクションに列挙された category 一覧を抽出する
 2. `products/<name>/config.yaml` を読む（`yaml` パッケージで parse）
    - `higgsfield.enabled: true` でない場合は「`config.yaml.higgsfield.enabled` を true にしてください」で停止
 3. `products/<name>/assets/reference/*.{png,jpg,jpeg,webp}` が 1 枚以上あること → なければ `REFERENCE_IMAGE_MISSING` で停止
-4. `products/<name>/assets/bgm/*.mp3` が 1 枚以上あること（`bgm.required: true` のとき）→ なければ `BGM_MISSING` で停止
-5. `formats.reel.enabled == true && count >= 1` を確認
+4. **`products/<name>/assets/reference/index.md` が存在すること** → なければ `REFERENCE_INDEX_MISSING` で停止（R-H14）
+5. **`products/<name>/assets/voice-spec/_index.md` と core.md の category 一覧で定義された各 `{category}.md` が揃っていること** → 欠落あれば `VOICE_SPEC_MISSING:{category}` で停止（R-H14）
+6. **各 `{category}.md` に必須 6 セクションが揃っていること**（`Voice Persona` / `Tone Keywords` / `Pace Target` / `Prosody Patterns` / `Taboos` / `Recommended ElevenLabs Voices`）→ 欠落あれば `VOICE_SPEC_INCOMPLETE:{category}:{missing}` で停止
+7. `products/<name>/assets/bgm/*.mp3` が 1 枚以上あること（`bgm.required: true` のとき）→ なければ `BGM_MISSING` で停止
+8. `formats.reel.enabled == true && count >= 1` を確認
+9. **R-H17 read-only 監視のため、`assets/voice-spec/` と `assets/reference/` 配下の全ファイル mtime を `assets_mtime_snapshot.json` に記録**
 
 ### Step 2. モデル ID 動的解決 + Cost Tracker 初期化 — R-H2, R-H6
 
@@ -70,15 +74,18 @@ const cost_tracker = createCostTracker({
 
 選択結果は後で `assets-manifest.json` にキャッシュする。
 
-### Step 3. ショット計画
+### Step 3. ショット計画 — R-H14
 
 `core.md` の訴求軸とブランドトーンから、Claude が 4 カット構成を立案：
 
-- 各カットの `purpose` / `duration_sec` / `visual_prompt`（GPT Image 2 用）/ `motion_prompt`（Seedance 用）/ `narration_text`（ElevenLabs 用、空可）
+- **variation_note の先頭に `[category]` タグを必ず置く**（例：`[worldview] Higgsfield 版…`）。タグ無しは `MISSING_CATEGORY_TAG` で停止
+- そのカテゴリの `assets/voice-spec/{category}.md` をこの時点で**先に読み込んで** Voice Persona と Pace Target を頭に入れた状態でショット計画する
+- 各カットの `purpose` / `duration_sec` / `visual_prompt`（GPT Image 2 用）/ `motion_prompt`（Seedance 用）/ `narration_text_ssml`（ElevenLabs 用、SSML 込み、R-H15）
+- `narration_text_ssml` には **`<break>` と `<prosody>` を最低 1 個ずつ含める**（voice-spec の `Prosody Patterns` セクションの exemplar に従う）
 - 合計 duration が `formats.reel.duration` と一致するように
 - R-H11（R12継承）に従い、対話モードでは計画を提示してユーザー確認、headless ならそのまま実行
 
-計画は `output/<product>/<YYYY-MM-DD>/.assets/<id>/shot-plan.yaml` に保存。
+計画は `output/<product>/<YYYY-MM-DD>/.assets/<id>/shot-plan.yaml` に保存（`category` フィールドを必ず含める）。
 
 ### Step 4. 商品リファレンス画像の upload — R-H3
 
@@ -114,21 +121,46 @@ const cost_tracker = createCostTracker({
    - Step 8 で `<Img src=shot-N.png>` + `<ZoomIn>` を使う
 7. `commit(tracker, request_id)`（成功時のみ）/ `cancel(tracker)`（致命破綻時のみ）
 
-### Step 7. ナレーション TTS 生成（ElevenLabs、Step 5/6 と並列実行可）— R-H7
+### Step 7. ナレーション TTS 生成（ElevenLabs、Step 5/6 と並列実行可）— R-H7, R-H15
 
 1. **cost guard**：`shouldAbort(tracker, estimateTtsCost(全narration合計char数))`
-2. 全カットの `narration_text` を結合 → 全体スクリプト
-3. `reserve(tracker, estimateTtsCost(chars), { step: "tts", model: cfg.higgsfield.tts.model_id, provider: "elevenlabs" })`
-4. ElevenLabs MCP の TTS ツールに渡す（`voice_id`, `model_id` は config から）
-5. mp3 ダウンロード → `.assets/<id>/narration.mp3`
-6. `commit(tracker)`
-7. **失敗時**：`cancel(tracker)`、無音で続行、`issues.json` に `tts_failed` 記録
+2. **voice 選定**：voice-spec の `Recommended ElevenLabs Voices` の優先順位に従い、利用可能な最上位 voice を選択。402 paid_plan_required で 1st が使えなければ 2nd → 3rd → fallback と順に試行、選択結果と理由を cost-report.json の `notes` に記録
+3. **voice_settings** は voice-spec の **「ElevenLabs voice_settings 推奨」** セクションから literal 取得：
+
+   ```json
+   { "stability": 0.70, "similarity_boost": 0.75, "style": 0.30, "use_speaker_boost": true }
+   ```
+
+   ハードコード禁止、必ず spec から読む（R-H15）。
+4. **shot ごとに分割して TTS 呼び出し**（カット境界が明確になるため、合体読みは禁止）：
+   各 shot の `narration_text_ssml`（Step 3 で準備、SSML 込み）を 1 呼び出し → `.assets/<id>/narration-N.mp3`
+5. `reserve(tracker, estimateTtsCost(chars_per_shot), { step: "tts", model: cfg.higgsfield.tts.model_id, provider: "elevenlabs", shot_index })` を shot 単位で
+6. `commit(tracker)` を各 shot 成功時
+7. **失敗時**：voice fallback を試す（R-H15）。それでも失敗なら `cancel(tracker)`、無音で続行、`issues.json` に `tts_failed:{shot_index}` 記録
+
+### Step 7.5. ナレーションのポストマスター（ffmpeg、必須） — R-H16
+
+各 `narration-N.mp3`（raw）を mastered 化：
+
+```bash
+ffmpeg -i .assets/<id>/narration-N.mp3 -af "\
+  highpass=f=85,\
+  equalizer=f=2500:t=q:w=1.4:g=2,\
+  acompressor=threshold=-18dB:ratio=3:attack=5:release=80,\
+  loudnorm=I=-16:TP=-1.5:LRA=11\
+" -y .assets/<id>/narration-N.mastered.mp3
+```
+
+1. ffmpeg バイナリの存在を `which ffmpeg` で確認（Remotion 依存で大抵存在）。なければ `POST_MASTER_TOOL_MISSING` で fail
+2. 各 shot に対してフィルタチェーンを適用（不変、R-H16）
+3. raw と mastered の **integrated LUFS** を `ffmpeg -af loudnorm=...:print_format=json` の出力からパース、`cost-report.json.audio.shots[i]` に記録
+4. 失敗時（exit code ≠ 0）は `POST_MASTER_FAILED:{shot_index}` で fail。**raw mp3 のままで Step 8 に進むのは禁止**
 
 ### Step 8. Remotion `.tsx` 生成
 
 Claude が `output/<product>/<date>/<id>.tsx` を直接書く。命名は R-H13 に従い `<product>-hf-reel-<index>`（例：`taskflow-hf-reel-1`）。
 
-骨子：
+骨子（**Audio は必ず `.mastered.mp3` を参照、R-H16**）：
 
 ```tsx
 import { AbsoluteFill, Audio, Sequence, Video, Img, staticFile } from "remotion";
@@ -137,11 +169,15 @@ import { TextOverlay } from "../../remotion/src/shared/TextOverlay";
 
 export const TaskflowHfReel1 = () => (
   <AbsoluteFill>
+    {/* BGM (optional, ASMR コミット時は省略) */}
     <Audio src={staticFile("products/taskflow/assets/bgm/<chosen>.mp3")} volume={0.2} />
-    <Audio src={staticFile("output/taskflow/2026-05-17/.assets/taskflow-hf-reel-1/narration.mp3")} />
     {/* カット0: 0〜5sec */}
     <Sequence from={0} durationInFrames={150}>
       <Video src={staticFile("output/taskflow/2026-05-17/.assets/taskflow-hf-reel-1/shot-0.mp4")} />
+      {/* mastered mp3 を参照（raw は禁止）*/}
+      <Sequence from={5}>
+        <Audio src={staticFile("output/taskflow/2026-05-17/.assets/taskflow-hf-reel-1/narration-0.mastered.mp3")} />
+      </Sequence>
       <TextOverlay text="..." startAt={15} endAt={120} />
     </Sequence>
     {/* カット2: 静止画フォールバック例 */}
@@ -149,10 +185,17 @@ export const TaskflowHfReel1 = () => (
       <ZoomIn>
         <Img src={staticFile("output/taskflow/2026-05-17/.assets/taskflow-hf-reel-1/shot-2.png")} />
       </ZoomIn>
+      <Sequence from={5}>
+        <Audio src={staticFile("output/taskflow/2026-05-17/.assets/taskflow-hf-reel-1/narration-2.mastered.mp3")} />
+      </Sequence>
     </Sequence>
   </AbsoluteFill>
 );
 ```
+
+ナレーション開始フレーム（`<Sequence from={N}>` の N）は voice-spec のカテゴリ別ペース感に
+従い、特に worldview / persona では **frame 5〜10 程度の早出し**を推奨（冒頭 3 秒の hook 強化）。
+feature では UI 操作の見せ場と同期させるため frame 15〜25 が妥当。
 
 `remotion/src/Root.tsx` に Composition を登録：
 
@@ -181,13 +224,14 @@ export const TaskflowHfReel1 = () => (
 6. `<id>.preview.png` として frame 0 をコピー
 7. `<id>.validation.json` に構造化結果を atomic write
 
-### Step 10. 投稿コピー + manifest + cost-report — R-H10, R-H12
+### Step 10. 投稿コピー + manifest + cost-report — R-H10, R-H12, R-H16, R-H17
 
-1. **投稿コピー（R-H12 = R13継承）**：`<id>.md` を生成（フロントマター + フック + 本文 + ハッシュタグ 5 本）。`lib/manifest.ts` の writeManifestAtomic と同じ atomic 書き込みを使う。
-2. **manifest.json**（atomic write）：`engine: "higgsfield"`、`rules_version: "1.0.0"`、`higgsfield_rules_version: "1.0.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。
-3. **cost-report.json**（atomic write）：`toReport(tracker, {session_started_at, session_ended_at})` の戻り値をそのまま書く。**成功 / 失敗 / abort のいずれでも必ず出力**（R-H10）。
-4. **issues.json**：途中で記録した issue がある場合のみ書く。
-5. **中間ファイル**：`.assets/<id>/` は basic 残す。`strict_mode: true` のみ削除。
+1. **投稿コピー（R-H12 = R13継承）**：`<id>.md` を生成（フロントマター + フック + 本文 + ハッシュタグ 5 本）。`variation_note` 先頭に `[category]` タグが含まれる（R-H14）。`lib/manifest.ts` の writeManifestAtomic と同じ atomic 書き込みを使う。
+2. **manifest.json**（atomic write）：`engine: "higgsfield"`、`rules_version: "1.0.0"`、`higgsfield_rules_version: "1.1.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に `category` フィールドを追加（R-H14）。
+3. **cost-report.json**（atomic write）：`toReport(tracker, {session_started_at, session_ended_at})` の戻り値に `audio.loudness` セクションを足して書く（R-H16）。**成功 / 失敗 / abort のいずれでも必ず出力**（R-H10）。
+4. **issues.json**：途中で記録した issue がある場合のみ書く。R-H17 read-only 違反検知時もここに記録。
+5. **R-H17 read-only 監査**：Step 1 で記録した `assets_mtime_snapshot.json` を再チェック、変更されていれば `READ_ONLY_VIOLATION:{path}` を issues.json に記録（停止はしない）。
+6. **中間ファイル**：`.assets/<id>/` は basic 残す（`narration-N.mp3` + `narration-N.mastered.mp3` の両方を保持、A/B 比較用）。`strict_mode: true` のみ raw を削除。
 
 ### Step 11. stdout 終了サマリ
 
@@ -219,6 +263,11 @@ R-H に書かれた禁則に加えて：
 - ❌ `core.md` を読まずに config だけで生成する
 - ❌ Remotion 実装の細かい使い方を本 Skill 内で考え込む（→ remotion-best-practices に委譲）
 - ❌ Higgsfield の `state: nsfw` を無視する
+- ❌ `variation_note` の `[category]` タグ無しで TTS に進む（R-H14）
+- ❌ プレーンテキスト narration を ElevenLabs に渡す（必ず SSML、R-H15）
+- ❌ raw mp3 を `.tsx` から直参照（必ず `.mastered.mp3`、R-H16）
+- ❌ ffmpeg ポストマスター工程を「軽量化のため」省く（R-H16）
+- ❌ autonomous run 中に voice-spec / reference を書き換える（R-H17）
 
 ## ヘッドレス実行コマンド（cron 用）
 

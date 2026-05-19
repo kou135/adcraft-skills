@@ -1,0 +1,111 @@
+# voice-spec / worldview
+
+世界観訴求カテゴリの音声執行仕様。`core.md` の `## コンテンツカテゴリ` `### worldview` で
+定義された容器に対する声色の具体化。
+
+## Voice Persona
+
+- **年齢感**：（例: 30 代後半〜40 代前半 / 若さの押し売りも、説教臭さもない年代）
+- **性別感**：（穏やかな女性 / gender-neutral / 落ち着いた男性 etc.）
+- **関係性**：（友人 / 兄姉 / 同僚 など。コーチや先生は避ける）
+- **距離感**：（マイクから何 cm の感覚か。intimate 寄りなら 15-30cm）
+- **比喩**：（参考にすべき声の質感 — Calm の Tamara Levitt 的、NHK 深夜便の読み手、etc.）
+
+## Tone Keywords (max 5)
+
+`intimate` / `slow-paced` / `almost-whispering` / `slightly-breathy` / `reassuring`
+
+> ※ 5 つ以内で、それぞれが具体的に audio-quality に翻訳可能なキーワード。
+> 「優しい」「素敵な」のような曖昧語は禁止。
+
+## Pace Target
+
+| 指標 | 目標値 | 備考 |
+|---|---|---|
+| chars/min | **280〜320** | TikTok 標準（397）より意図的に遅く、瞑想 narration 寄り |
+| talk-time ratio | **40〜50%** | 動画尺の半分以下、無音と語りの呼吸を作る |
+| pause budget | **1 shot あたり 0.8s 以上の `<break>` を最低 1 箇所** | 文末・キーワード前後で必須 |
+| 1 文の長さ | **15〜22 chars / 句点** | 句読点で必ず区切る、息継ぎ感を残す |
+
+## Prosody Patterns
+
+ブランドキーワード強調（必須適用）:
+
+```xml
+<prosody pitch="+1st" rate="0.92">{{BRAND_NAME}}</prosody>
+<prosody pitch="+1st" rate="0.90">{{KEY_VERB_1}}</prosody>
+<prosody rate="0.88" pitch="-1st">{{KEY_VERB_2}}</prosody>
+```
+
+文構造パターン:
+
+- フックは無音 0.3s から立ち上がる
+- 文末は必ず 0.4〜0.6s の `<break>` で締める
+- 「、」直後は 0.2〜0.3s break、「。」直後は 0.4〜0.6s break が基本
+
+ElevenLabs voice_settings 推奨:
+
+```json
+{
+  "stability": 0.70,
+  "similarity_boost": 0.75,
+  "style": 0.30,
+  "use_speaker_boost": true
+}
+```
+
+> `style` を 0 にしない。worldview の "intimate but not announcer" 表現幅を確保するため。
+
+## Recommended ElevenLabs Voices
+
+| 優先 | voice | 提供 | 備考 |
+|---|---|---|---|
+| 1st | （例: Sara `l7ME2dcqpdvq6E8sCS24`） | Professional category | calm, mature, deeply soothing。paid plan 必須 |
+| 2nd | （例: Harune） | Voice Library | Japanese-native、calm clarity |
+| 3rd | （言語ネイティブの落ち着いた声） | Voice Library | 1st/2nd 不可時 |
+| fallback | （premade voice、EN-trained でも可） | premade | 緊急時のみ |
+
+## Taboos
+
+- 早口・energetic な抑揚
+- ナレーターが「自分はこう思う」と前に出る one-person 性
+- 「!」「?」の語気強調
+- 「すごい」「最高」「圧倒的」等の煽り語
+- ためらいの "えっと" "あの" のような hedge（worldview では禁止、persona では許容）
+- 競合実名
+
+## Reference Brands / Creators
+
+- （Calm / Headspace / 深夜ラジオ系 / Aesop の店頭ナレーション etc.）
+- 「広告っぽくない」自然さの参考になるものを 3-5 個列挙
+
+## BGM / SFX Policy
+
+- **BGM**：（禁止 / sparse ambient pad / どちらか）
+- **Room tone**：必須、-30dB で動画尺通しで敷く
+- **Pattern interrupt SFX**：許容範囲を明記（例：衣擦れ OK、通知音 NG）
+
+## Exemplar Phrases (SSML-ready)
+
+```text
+<!-- フック -->
+<break time="0.3s"/>...
+
+<!-- 解決提示 -->
+...
+
+<!-- 到達状態 -->
+<prosody pitch="+1st" rate="0.92">...</prosody>
+
+<!-- ブランド帰着 -->
+<prosody rate="0.88">{{BRAND_NAME}}.</prosody><break time="0.6s"/>...
+```
+
+## Validation hints
+
+レンダリング後の試聴で以下をチェック:
+
+- [ ] 冒頭 0.5s 以内に何らかの音が成立しているか
+- [ ] 句点後の break が 0.4s 以上あるか（耳で「呼吸」を感じるか）
+- [ ] ブランドキーワードに他より明らかな抑揚があるか
+- [ ] 「announcer」っぽさが出ていないか
