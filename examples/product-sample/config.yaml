@@ -53,10 +53,12 @@ higgsfield:
       - "nano-banana-2"
     max_iterations_per_shot: 3
   video:
+    # 2026-04-09 以降、Seedance 2.0 は全プラン (Starter 含む) で開放済み。
+    # 呼出時に `mode: "fast"` を明示しないと std で叩かれ、Starter では
+    # 402 paid_plan_required になりやすい。SKILL.md Step 6 参照。
     model_preference:
-      - "seedance2"           # 1st: Plus plan 以上必須
-      - "kling2_6"            # 2nd: Starter plan で利用可
-      - "seedance2-fast"      # 3rd
+      - "seedance_2_0"        # 1st: 公式 ID。`mode: "fast"` で呼ぶこと (fast 720p ≒ 17 cred/5s)
+      - "kling2_6"            # 2nd: starter 安定 (10 cred/shot @ 5s)、seedance 402 時の fallback
     one_shot: true
     fallback_to_static: true
   tts:
