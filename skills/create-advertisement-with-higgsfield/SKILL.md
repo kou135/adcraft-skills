@@ -78,14 +78,25 @@ const cost_tracker = createCostTracker({
 
 `core.md` の訴求軸とブランドトーンから、Claude が 4 カット構成を立案：
 
-- **variation_note の先頭に `[category]` タグを必ず置く**（例：`[worldview] Higgsfield 版…`）。タグ無しは `MISSING_CATEGORY_TAG` で停止
+- **variation_note の先頭に `[category/viewpoint]` の 2 階層タグを置く**（例：`[persona/observed] ...`）。
+  - `category` 無しは `MISSING_CATEGORY_TAG` で停止
+  - `viewpoint` は `core.md` の各カテゴリ「視点パレット」リストに含まれる値のみ許可。`viewpoint` 省略時は default として **そのカテゴリのパレット最上段（1st）** を採用、ただしその際は `issues.json` に `viewpoint_defaulted` を info 記録
+  - `viewpoint` がパレットに無い値の場合は `INVALID_VIEWPOINT_TAG:{category}:{viewpoint}` で停止
+- **過去 reel の viewpoint 履歴チェック（直近 N-1 件と重複禁止）**:
+  - `output/<product>/*/manifest.json` を glob で全て読み、`items[].category` と `items[].viewpoint`（旧バージョンの manifest にしか無い場合は `items[].variation_note` の `[category/viewpoint]` から抽出）で `viewpoint_history[category]` を**時系列降順**に並べる
+  - `N = core.md の該当カテゴリ「視点パレット」リストの長さ`。現状 N=4
+  - `recent_set = viewpoint_history[category].slice(0, N - 1)` を計算（直近 3 件）
+  - **`recent_set` に含まれない viewpoint だけを選択候補にする**。選択候補が複数あれば Claude が訴求軸との適合度で 1 つ選ぶ
+  - 過去 reel が N-1 件未満の場合は履歴にあるものを全部除外（実質的には早期は自由度高い）
+  - 視点を変えると visual_prompt / motion_prompt のテンプレも変わる（例：`observed` なら「第三者観察」「横顔・後ろ姿」「カフェや電車」を prompt 骨子に組み込む）
+  - 違反時は `VIEWPOINT_REPETITION_TOO_RECENT:{category}:{viewpoint}:{distance}` で再選定（fail はせず Claude が候補から別を選ぶ）
 - そのカテゴリの `assets/voice-spec/{category}.md` をこの時点で**先に読み込んで** Voice Persona と Pace Target を頭に入れた状態でショット計画する
-- 各カットの `purpose` / `duration_sec` / `visual_prompt`（GPT Image 2 用）/ `motion_prompt`（Seedance 用）/ `narration_text_ssml`（ElevenLabs 用、SSML 込み、R-H15）
+- 各カットの `purpose` / `duration_sec` / `viewpoint`（shot 単位で母 viewpoint を維持 or 計画的に切替）/ `visual_prompt`（GPT Image 2 用）/ `motion_prompt`（Seedance 用）/ `narration_text_ssml`（ElevenLabs 用、SSML 込み、R-H15）
 - `narration_text_ssml` には **`<break>` と `<prosody>` を最低 1 個ずつ含める**（voice-spec の `Prosody Patterns` セクションの exemplar に従う）
 - 合計 duration が `formats.reel.duration` と一致するように
 - R-H11（R12継承）に従い、対話モードでは計画を提示してユーザー確認、headless ならそのまま実行
 
-計画は `output/<product>/<YYYY-MM-DD>/.assets/<id>/shot-plan.yaml` に保存（`category` フィールドを必ず含める）。
+計画は `output/<product>/<YYYY-MM-DD>/.assets/<id>/shot-plan.yaml` に保存（`category` / `viewpoint` の両フィールドを必ず含める）。
 
 ### Step 4. 商品リファレンス画像の upload — R-H3
 
@@ -111,9 +122,16 @@ const cost_tracker = createCostTracker({
 
 画像 OK だったカットだけ：
 
+> **Seedance 2.0 (`seedance_2_0`) を呼ぶときは `mode: "fast"` を引数で明示すること。**
+> models_explore に記載のとおり `mode` パラメータは `"std"` (default) / `"fast"` の 2 値で、
+> Higgsfield Starter プランでは `std` で 402 paid_plan_required が出やすい
+> (2026-04-09 の全プラン開放以降も std は実質有料層向け)。
+> `fast` 720p なら ≒ 17 credits/5s で Starter でも 1 発受理されるのが実測 (reel-4, 2026-05-20)。
+> 402 が返ったら `kling2_6` (Starter 安定) に preference fallback、それも失敗なら R-H5 静止画。
+
 1. **cost guard**
 2. `reserve(tracker, estimateVideoCost(video_model_id, shot.duration_sec), { step: "generate_video", model: video_model_id, shot_index, provider: "higgsfield" })`
-3. `generate_video(model_id, image_url=uploaded_shot_N, prompt=motion_prompt, duration=shot.duration_sec)`
+3. `generate_video(model_id, image_url=uploaded_shot_N, prompt=motion_prompt, duration=shot.duration_sec, mode="fast")` （`seedance_2_0` の場合）
 4. `subscribe()` → 完了
 5. ダウンロード → `.assets/<id>/shot-N.mp4`
 6. **動画段階軽量検証**：致命的破綻のみ（途中切れ / 黒画面 / 1 秒未満）。NG なら：
@@ -247,9 +265,41 @@ export const TaskflowHfReel1 = () => (
 
 完成 MP4 は無音。視聴者向けには CapCut / Premiere 等で `.md` のナレーション台本セクションを参考に手動で narration / BGM を当てる。
 
-`remotion/src/Root.tsx` に Composition を登録：
+#### Symlink-safe rendering — `_generated_/` ミラーコピー（必須）
+
+`output/` ディレクトリが symlink で別 repo に飛んでいる環境（例：`output/minima` → `minima-adcraft-content/output/minima`）では、Webpack の `resolve.symlinks: true` がデフォルトのため、`output/<...>/<id>.tsx` から相対 import `"../../../remotion/src/shared/transitions"` が **symlink 解決後の実体パス起点** で計算され、adcraft 外を指して `Module not found` で fail する。
+
+**回避策（必須）**: 生成した `.tsx` を **adcraft 内の固定パス `remotion/src/_generated_/<id>.tsx` にもコピー** し、import path を `_generated_/` 起点に書き換える。動画 / 画像 / 音声の素材は既に `remotion/public/<...>` 配下にコピー済み（symlink 外）なので、staticFile() はそのまま動く。
+
+```bash
+# Step 8 末尾で実施（必須、symlink 環境でなくても害なし）
+mkdir -p remotion/src/_generated_
+cp output/<product>/<date>/<id>.tsx remotion/src/_generated_/<id>.tsx
+# import path を書き換え (output/ ベースの 3 階層 → _generated_/ ベースの 2 階層)
+sed -i '' 's|\.\./\.\./\.\./remotion/src/shared/|../shared/|g' remotion/src/_generated_/<id>.tsx
+```
+
+書き換え後の import 例:
 
 ```tsx
+// output/<product>/<date>/<id>.tsx (オリジナル、symlink 環境では Webpack 解決失敗)
+import { Fade, ZoomIn } from "../../../remotion/src/shared/transitions";
+import { TextOverlay } from "../../../remotion/src/shared/TextOverlay";
+
+// remotion/src/_generated_/<id>.tsx (ミラー、Webpack 解決成功)
+import { Fade, ZoomIn } from "../shared/transitions";
+import { TextOverlay } from "../shared/TextOverlay";
+```
+
+`remotion/src/Root.tsx` に Composition を登録（**import は必ず `_generated_/` 経由**）：
+
+```tsx
+// ✅ 推奨: _generated_/ から import（symlink-safe）
+import { TaskflowHfReel1 } from "./_generated_/taskflow-hf-reel-1";
+
+// ❌ NG: output/ から直接 import（symlink 環境で Webpack 解決失敗）
+// import { TaskflowHfReel1 } from "../../output/taskflow/2026-05-17/taskflow-hf-reel-1";
+
 <Composition
   id="taskflow-hf-reel-1"
   component={TaskflowHfReel1}
@@ -259,6 +309,8 @@ export const TaskflowHfReel1 = () => (
   height={1920}
 />
 ```
+
+オリジナル `output/<...>/<id>.tsx` は canonical な timeline 仕様として **保持** する（直接 render しないが、視聴者 / 編集者が timeline を読むときの source of truth）。Step 9 の検証 / render は必ず `_generated_/` 経由のエントリで行う。
 
 > Remotion API の使い方（`useCurrentFrame`, `interpolate`, `Sequence`, `Composition` の宣言場所、`spring` の使いどころ等）は `remotion-dev/skills` のルールに従う。本 Skill 内で再定義しない。
 
@@ -270,9 +322,11 @@ export const TaskflowHfReel1 = () => (
 2. Claude が PNG を Read で視覚チェック（既存 `VISUAL_CHECKLIST`、`lib/validators.ts`）
 3. `pnpm exec tsc --noEmit` で型チェック
 4. 問題あれば `.tsx` 修正（**素材は再生成しない、合成だけ調整**）→ 最大 3 回（`config.yaml.validation.max_iteration`）
-5. OK なら `pnpm exec remotion render <entry> <id> <output-mp4>` で MP4 出力
+   - 修正は **オリジナル `output/<...>/<id>.tsx` と `_generated_/<id>.tsx` の両方** に反映する（または `_generated_/` 側を編集して `cp -f` で逆方向にミラーする運用でも可）
+5. OK なら `pnpm exec remotion render <entry> <id> <output-mp4>` で MP4 出力。**`<entry>` は `remotion/src/index.ts`（`_generated_/<id>` を import している Root.tsx に到達するもの）**
 6. `<id>.preview.png` として frame 0 をコピー
 7. `<id>.validation.json` に構造化結果を atomic write
+8. render が `Module not found` / `Can't resolve '../../../remotion/src/shared/...'` で fail した場合は Step 8 の `_generated_/` ミラーコピー漏れ。`remotion/src/_generated_/<id>.tsx` の存在と import path 書き換え（`../../../remotion/src/shared/` → `../shared/`）を再確認
 
 ### Step 10. 投稿コピー + manifest + cost-report — R-H10, R-H12, R-H16, R-H17, R-H18
 
@@ -285,6 +339,7 @@ export const TaskflowHfReel1 = () => (
    - `lib/manifest.ts` の writeManifestAtomic と同じ atomic 書き込みを使う
 2. **manifest.json**（atomic write）：`engine: "higgsfield"`、`rules_version: "1.0.0"`、`higgsfield_rules_version: "1.2.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に以下を追加：
    - `category`（R-H14）
+   - **`viewpoint`** — variation_note の 2 階層目から抽出した視点タグ（例：`"observed"`）。タグ無し時は category パレットの 1st を文字列化して入れる。視点履歴チェックの参照源
    - **`audio_mode: "manual" | "auto"`**（R-H18、`tts.enabled` の値に応じて）
    - `bgm_embedded: true | false`（R-H18、`bgm.required` の値に応じて）
 3. **cost-report.json**（atomic write）：`toReport(tracker, {session_started_at, session_ended_at})` の戻り値に `audio.loudness` セクションを足して書く（auto モード時のみ実数値、lite モード時は `null`）（R-H16）。**成功 / 失敗 / abort のいずれでも必ず出力**（R-H10）。
@@ -331,6 +386,9 @@ R-H に書かれた禁則に加えて：
 - ❌ `bgm.required: false` のとき .tsx に BGM `<Audio>` を埋め込む（R-H18 違反）
 - ❌ lite モードで `.md` のナレーション台本セクションを省略（R-H18）
 - ❌ lite モードの動画に narration が無いことを伝えず、消費者に "音声付き完成品" と誤認させる出力
+- ❌ symlink 環境で Root.tsx から `output/<...>/<id>.tsx` を直接 import する（Webpack `resolve.symlinks` でモジュール解決が adcraft 外を指して fail。必ず `remotion/src/_generated_/<id>.tsx` 経由で import）
+- ❌ `_generated_/` ミラーコピーを忘れて Step 9 の render を `Module not found` で詰まらせる（Step 8 末尾の `cp` と `sed` 書き換えを skip しない）
+- ❌ Remotion render が `_generated_/` 経由で動かないからと言って ffmpeg 直接合成へ恒久的に逃げる（TextOverlay / Fade / ZoomIn 等の React コンポーネントが使えなくなり、SKILL の表現力が落ちる。緊急回避ならアリだが必ず原因を Step 8 にフィードバックする）
 
 ## ヘッドレス実行コマンド（cron 用）
 
