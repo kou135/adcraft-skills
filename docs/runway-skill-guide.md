@@ -173,6 +173,8 @@ if (spent + reserved + next_call > limit × safety_margin) → abort
 | 状況 | 対応 |
 |---|---|
 | Runway MCP 未接続 | 起動時停止、`claude mcp add runway …` 案内 |
+| `lib/runway-cost.ts` 不在 / 価格表が空 | `LIB_RUNWAY_COST_NOT_FOUND` で停止（R-R2）|
+| reference 画像 > 16MB | `REFERENCE_IMAGE_TOO_LARGE` で停止。16MB 未満にリサイズ、または公開 URL を `uri` に渡す（R-R3）|
 | ElevenLabs MCP 未接続（auto）| 起動時停止 |
 | model preference が既知集合に無い | `MODEL_NOT_KNOWN` で停止（R-R2）|
 | 画像 3 回 NG | カット動画化中止、`issues.json` 記録、次カットへ |

@@ -24,7 +24,7 @@ description: products/<name>/ の core.md と config.yaml.runway: を入力に�
 - **対話モード**：Claude Code UI から手動呼び出し。生成計画を立てたら実行前に確認を求める。
 - **headless モード**：`claude -p "create-advertisement-with-runway で …"` から起動。`--permission-mode bypassPermissions` 前提で自動承認して進む。
 
-R-R11（既存R12継承）により、プロンプトに `headless` / `自律実行` / `承認不要` / `auto` / `そのまま生成` 等のキーワード、または「最後まで」「停止せず」「全自動で」等の連続実行表現があれば、対話モードでも確認をスキップする。
+R-R11（基底 `create-advertisement` の R12「headless 時のユーザー確認スキップ」を継承）により、プロンプトに `headless` / `自律実行` / `承認不要` / `auto` / `そのまま生成` 等のキーワード、または「最後まで」「停止せず」「全自動で」等の連続実行表現があれば、対話モードでも確認をスキップする。
 
 ## 入力
 
@@ -40,7 +40,8 @@ R-R11（既存R12継承）により、プロンプトに `headless` / `自律実
 
 1. `rules/create-advertisement-with-runway-rules.md` を Read で読み込む。R-R1〜R-R19 を**必ず適用**する。
 2. Runway MCP の `runway_getOrg()` を呼ぶ → 200 OK & 組織情報（クレジット残高含む）を確認。失敗なら `MCP_NOT_CONNECTED:runway` で停止し、`claude mcp add runway …` 手順を案内。
-3. （auto モード時のみ）ElevenLabs MCP の lightweight call → 200 OK 確認。失敗なら停止。
+3. `lib/runway-cost.ts` の `isPricingTablePopulated()` を呼ぶ → true を確認。false / import 不能なら `LIB_RUNWAY_COST_NOT_FOUND` で停止（model 解決・コスト算出の前提が壊れているため、R-R2）。
+4. （auto モード時のみ）ElevenLabs MCP の lightweight call → 200 OK 確認。失敗なら停止。
 
 ### Step 1. 商品設定の読み込みと整合性チェック — R-R11, R-R14
 
@@ -50,6 +51,7 @@ R-R11（既存R12継承）により、プロンプトに `headless` / `自律実
 2. `products/<name>/config.yaml` を読む（`yaml` パッケージで parse）
    - `runway.enabled: true` でない場合は「`config.yaml.runway.enabled` を true にしてください」で停止
 3. `products/<name>/assets/reference/*.{png,jpg,jpeg,webp}` が 1 枚以上 → なければ `REFERENCE_IMAGE_MISSING` で停止
+   - **各 reference 画像が ≤16MB**（Runway base64 data URI 制約、R-R3）→ 超過は `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止し、リサイズ or 公開 URL での `uri` 指定を案内
 4. **`products/<name>/assets/reference/index.md` が存在** → なければ `REFERENCE_INDEX_MISSING` で停止（R-R14）
 5. **`assets/voice-spec/_index.md` と各 `{category}.md` が揃っている** → 欠落あれば `VOICE_SPEC_MISSING:{category}` で停止（R-R14）
 6. **各 `{category}.md` に必須 6 セクション**（`Voice Persona` / `Tone Keywords` / `Pace Target` / `Prosody Patterns` / `Taboos` / `Recommended ElevenLabs Voices`）→ 欠落あれば `VOICE_SPEC_INCOMPLETE:{category}:{missing}` で停止
@@ -63,17 +65,10 @@ Runway MCP に `list_models()` が無いため、**config preference から解�
 
 ```ts
 import { createCostTracker } from "../../lib/cost-tracker";
-import {
-  RUNWAY_IMAGE_CREDITS_PER_IMAGE,
-  RUNWAY_VIDEO_CREDITS_PER_SEC,
-} from "../../lib/runway-cost";
+import { isKnownImageModel, isKnownVideoModel } from "../../lib/runway-cost";
 
-const image_model_id = cfg.runway.image.model_preference.find(
-  (m) => m in RUNWAY_IMAGE_CREDITS_PER_IMAGE,
-);
-const video_model_id = cfg.runway.video.model_preference.find(
-  (m) => m in RUNWAY_VIDEO_CREDITS_PER_SEC,
-);
+const image_model_id = cfg.runway.image.model_preference.find(isKnownImageModel);
+const video_model_id = cfg.runway.video.model_preference.find(isKnownVideoModel);
 // どちらも見つからなければ MODEL_NOT_KNOWN で停止
 
 const cost_tracker = createCostTracker({
@@ -119,7 +114,7 @@ Runway は upload→URL 方式ではなく `referenceImages` 配列に直接渡�
 
 1. **cost guard**：`shouldAbort(tracker, estimateRunwayImageCost(image_model_id))` を呼ぶ。true なら abort → Step 8 へジャンプ（生成済カットだけで合成試行）
 2. `reserve(tracker, estimateRunwayImageCost(image_model_id), { step: "generate_image", model: image_model_id, shot_index, provider: "runway" })`
-3. `runway_generateImage({ model: image_model_id, promptText: visual_prompt, ratio, referenceImages })` → task
+3. **pre-flight 検証（R-R19）**：`isValidRatio(ratio)` && `isKnownImageModel(image_model_id)` を確認（不正なら fail-fast）。OK なら `runway_generateImage({ model: image_model_id, promptText: visual_prompt, ratio, referenceImages })` → task
 4. `runway_getTask(task_id)` を poll（≥5s 間隔 + jitter、タイムアウト 10 分）→ `SUCCEEDED` で出力 URL 取得
 5. **即ダウンロード（R-R19、URL は 24h 失効）** → `output/<product>/<date>/.assets/<id>/shot-N.png`
 6. **画像視覚チェック**：PNG を Read tool で読み、`RUNWAY_IMAGE_CHECKLIST`（`lib/runway-checklist.ts`）で構造化判定
@@ -136,7 +131,7 @@ Runway は upload→URL 方式ではなく `referenceImages` 配列に直接渡�
 
 1. **cost guard**：`shouldAbort(tracker, estimateRunwayVideoCost(video_model_id, shot.duration_sec))`
 2. `reserve(tracker, estimateRunwayVideoCost(video_model_id, shot.duration_sec), { step: "generate_video", model: video_model_id, shot_index, provider: "runway" })`
-3. `runway_generateVideo({ model: video_model_id, promptImage: <shot-N.png の URL/data URI>, promptText: motion_prompt, ratio, duration: shot.duration_sec })` → task
+3. **pre-flight 検証（R-R19）**：`isValidRatio(ratio)` && `isKnownVideoModel(video_model_id)` を確認（不正なら fail-fast）。`duration = roundDuration(shot.duration_sec)`（enum `[5,10]`、丸め発生時は `issues.json` に `duration_rounded` 記録）。`runway_generateVideo({ model: video_model_id, promptImage: <shot-N.png の URL/data URI>, promptText: motion_prompt, ratio, duration })` → task
 4. `runway_getTask(task_id)` を poll → `SUCCEEDED`
 5. **即ダウンロード（R-R19）** → `.assets/<id>/shot-N.mp4`
 6. **動画段階軽量検証**：致命的破綻のみ（途中切れ / 黒画面 / 1 秒未満）。NG なら：
@@ -295,7 +290,7 @@ import { TaskflowRwReel1 } from "./_generated_/taskflow-rw-reel-1";
    - **lite モード時は加えて「## ナレーション台本」セクションを必ず付ける**（R-R18）。shot 別に：シーン要約 / 想定テキスト / 想定発話時間 / 強調キーワード / SSML 例 / 推奨 voice / 推奨音量。末尾に CapCut / Premiere 組み立て手順。欠落時 `MISSING_NARRATION_SCRIPT` で fail
    - `lib/manifest.ts` の `writeManifestAtomic` と同じ atomic 書き込みを使う
 2. **manifest.json**（atomic write）：`engine: "runway"`、`rules_version: "1.0.0"`、`runway_rules_version: "1.0.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に `category` / `viewpoint`（R-R14）/ `audio_mode`（R-R18）/ `bgm_embedded`（R-R18）/ `ratio`（R-R19）を追加
-3. **cost-report.json**（atomic write）：`toReport(tracker, {...})` の戻り値に `audio.loudness`（auto 時のみ実数値、lite 時 null）を足す。**成功 / 失敗 / abort いずれでも必ず出力**（R-R10）。`notes` に「spent は balance 非取得のため client 側推定値」を明記（R-R6）
+3. **cost-report.json**（atomic write）：`toReport(tracker, {session...}, { notes })` の戻り値に `audio.loudness`（auto 時のみ実数値、lite 時 null）を足す。**成功 / 失敗 / abort いずれでも必ず出力**（R-R10）。`notes` には「コストは `lib/runway-cost.ts` の価格表に基づく **client 側推定値**で、Runway 課金と一致しない場合あり。最終額は Runway billing で確認」+ 使用モデル / 適用クレジット単価を必ず明記（R-R6）
 4. **issues.json**：途中で記録した issue がある場合のみ書く。R-R17 read-only 違反、R-R18 違反、R-R19 の `duration_rounded` 等もここに記録
 5. **R-R17 read-only 監査**：Step 1 で記録した `assets_mtime_snapshot.json` を再チェック、変更されていれば `READ_ONLY_VIOLATION:{path}` を issues.json に記録（停止はしない）
 6. **中間ファイル**：`.assets/<id>/` は basic 残す（auto では `narration-N.mp3` + `.mastered.mp3` 両方）。`strict_mode: true` のみ raw を削除
@@ -362,6 +357,8 @@ cd /path/to/adcraft && \
 | 状況 | 対応 |
 |---|---|
 | Runway MCP 未接続 | 起動時停止、`claude mcp add runway …` 手順を案内 |
+| `lib/runway-cost.ts` 不在 / 価格表が空 | `LIB_RUNWAY_COST_NOT_FOUND` で停止（R-R2）|
+| reference 画像 > 16MB | `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止、リサイズ or 公開 URL を案内（R-R3）|
 | ElevenLabs MCP 未接続（auto モード）| 起動時停止 |
 | `core.md` がプレースホルダのまま | 停止、ユーザーに記入を促す |
 | `config.yaml.runway.enabled: false` | 停止、有効化を案内 |

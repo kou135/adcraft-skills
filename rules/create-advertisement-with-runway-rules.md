@@ -7,10 +7,12 @@
 > （R-H1-R-H18）とは独立した R-R 系統を採用。本ファイルの version は `manifest.json` の
 > `runway_rules_version` に記録される。
 >
-> **設計方針**：Skill C（higgsfield 版）と完全同型のパイプラインを、生成バックエンドだけ
-> Runway に差し替えたもの。R-R1〜R-R18 は R-H1〜R-H18 と 1:1 対応する。Runway 固有の制約
-> （`list_models()` / balance tool 非対応、生成物 URL の 24h 失効、ratio の pixel 文字列、
-> model ID literal、duration enum）は **R-R19 に集約**する。
+> **設計方針**：Skill C（higgsfield 版）と**機能（パイプライン）レベルで同型**になるよう、
+> 生成バックエンドだけ Runway に差し替えたもの。R-R1〜R-R18 は R-H1〜R-H18 と機能的に 1:1 対応する
+> （ただし Runway MCP の制約下での等価実装：model は config preference で解決、コストは client 側算出 等）。
+> **R-R19 は Higgsfield に対応ルールが存在しない Runway バックエンド固有の制約**（`list_models()` /
+> balance tool 非対応、生成物 URL の 24h 失効、ratio の pixel 文字列、model ID literal、duration enum、
+> referenceImages 構造）を集約した**補助ルール**であり、R-R1〜R-R18 の 1:1 対応を損なうものではない。
 >
 > **変更履歴**：
 > - v1.0.0: 初版。Skill C v1.2.0（R-H18 lite/auto モード）相当の機能を Runway 向けに移植。
@@ -33,9 +35,14 @@ skill 起動時に以下を順に確認し、1 つでも失敗したら停止す
 
 1. Runway MCP に対し `runway_getOrg()` 等の lightweight call → 200 OK & 組織情報（クレジット残高含む）が返る
    - Runway MCP には higgsfield の `list_models()` が無い（R-R2 参照）。疎通は `runway_getOrg` で行う。
-2. ElevenLabs MCP の lightweight call（例: `list_voices()`）→ 200 OK（**auto モード時のみ必須**、R-R18）
-3. `products/<name>/assets/reference/*.{png,jpg,jpeg,webp}` が 1 枚以上存在
-4. `products/<name>/assets/bgm/*.mp3` が 1 枚以上存在（`bgm.required: true` のとき）
+2. `lib/runway-cost.ts` の `isPricingTablePopulated()` が true（価格テーブルが空でない）。false / import 不能なら
+   `LIB_RUNWAY_COST_NOT_FOUND` で停止（model 解決・コスト算出の前提が壊れているため、R-R2）
+3. ElevenLabs MCP の lightweight call（例: `list_voices()`）→ 200 OK（**auto モード時のみ必須**、R-R18）
+4. `products/<name>/assets/reference/*.{png,jpg,jpeg,webp}` が 1 枚以上存在
+5. **各 reference 画像のファイルサイズが ≤16MB**（Runway の base64 data URI 制約、R-R3 / R-R19）。
+   超過があれば `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止し、(a) 16MB 未満にリサイズ、または
+   (b) 公開 URL にアップロードして `referenceImages` の `uri` に HTTPS URL を渡す、を案内する
+6. `products/<name>/assets/bgm/*.mp3` が 1 枚以上存在（`bgm.required: true` のとき）
 
 停止時は `MCP_NOT_CONNECTED:runway` / `REFERENCE_IMAGE_MISSING` / `BGM_MISSING` 等の明確な reason を
 stdout に出し、`claude mcp add runway -e RUNWAYML_API_SECRET=… -- node …/build/index.js` 手順を案内する。
@@ -43,9 +50,12 @@ stdout に出し、`claude mcp add runway -e RUNWAYML_API_SECRET=… -- node …
 ### R-R2. モデル ID は config preference から解決、ハードコード禁止
 
 - Runway MCP は `list_models()` を提供しない。モデル ID は `config.yaml.runway.image.model_preference` と
-  `.video.model_preference` の優先順から取り、`lib/runway-cost.ts` の価格テーブル（既知モデル集合）に
-  存在することを検証して最初の 1 つを使う。
+  `.video.model_preference` の優先順から取り、`lib/runway-cost.ts` の `isKnownImageModel()` /
+  `isKnownVideoModel()`（価格テーブル = 既知モデル集合）で検証して最初に true になる 1 つを使う。
 - preference に書かれた全モデルが既知集合にも存在しないなら停止（`MODEL_NOT_KNOWN`）。
+- ⚠️ **静的テーブルの宿命**：higgsfield の `list_models()` 動的解決と異なり、Runway 側でモデル追加 /
+  価格改定があると `lib/runway-cost.ts` が古くなる。価格が重要な run では実行前に
+  docs.dev.runwayml.com/guides/pricing を確認し、必要なら `lib/runway-cost.ts` を更新する（R-R19.1）。
 - model ID は **literal を厳守**（R-R19）。特に `gen4.5`（ドット）/ `gen4_image`（アンダースコア）。
 - 選択結果は `output/<product>/<date>/.assets/<id>/assets-manifest.json` にキャッシュし、同セッション中は
   再解決不要。価格が重要な run では実行前に docs.dev.runwayml.com/guides/pricing を確認すること。
@@ -122,7 +132,10 @@ stdout に出し、`claude mcp add runway -e RUNWAYML_API_SECRET=… -- node …
 
 - 成功 / 失敗 / abort いずれの終了でも `cost-report.json` を atomic write。
 - 内訳：`by_provider`（`runway` / `elevenlabs`）/ `history` 配列 / `aborted_by_cost` フラグ。
-- Runway は balance 非取得のため、ここに記録される spent は **client 側推定値**である旨を `notes` に明記する。
+- Runway は balance 非取得のため、`toReport(tracker, session, { notes })` で `notes` に**必ず**以下相当を明記する
+  （`CostReport.notes`、R-R6）：「コストは `lib/runway-cost.ts` の価格表（最終検証: <date>）に基づく
+  **client 側推定値**であり、モデル更新・価格改定により実際の Runway 課金と一致しない場合がある。最終額は
+  Runway の billing ダッシュボードで確認すること」。使用モデルと適用クレジット単価も併記して監査可能にする。
 
 ### R-R11. 既存 R10 / R11 / R12 を継承
 
@@ -238,7 +251,11 @@ Runway バックエンド特有の落とし穴。SKILL.md 全 Step でこれら�
 5. **duration enum**：`gen4_turbo` / `gen4.5` image_to_video は固定 enum **`[5, 10]`**（可変ではない）。
    `gen3a_turbo` も `[5, 10]`。`seedance2` は 4〜15s 対応だが、本 skill の `shot_duration_sec`（既定 5）に合わせる。
    shot_duration が enum に無い値なら最も近い許容値に丸め、`issues.json` に `duration_rounded` を記録。
-6. **reference image**：`referenceImages` 配列に最大 3 枚、`{ uri, tag }`（uri = base64 data URI か URL）+ `@tag` で prompt 参照（R-R3）。
+6. **reference image**：`referenceImages` 配列に最大 3 枚、`{ uri, tag }`（uri = base64 data URI か URL、≤16MB）+ `@tag` で prompt 参照（R-R3）。
+7. **pre-flight 検証の強制**：3〜5 は API 呼び出し前に `lib/runway-cost.ts` のヘルパで防御的に検証する
+   （headless 実行で失敗を未然に防ぐため）。`isValidRatio(ratio)`（`"9:16"` 等を弾く）/
+   `isKnownVideoModel` `isKnownImageModel`（typo `gen4_5` 等を弾く）/ `roundDuration(sec)`（enum `[5,10]` に丸め）。
+   ratio / model が不正なら fail-fast、duration 丸め発生時は `issues.json` に `duration_rounded` を記録。
 
 ## 受入基準
 
