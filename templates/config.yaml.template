@@ -87,3 +87,39 @@ higgsfield:
     required: false           # default OFF。true なら assets/bgm/*.mp3 を <Audio> で全 shot 通敷
     selection: "auto"         # auto / explicit。explicit なら下の explicit_file 指定
     # explicit_file: "energetic-01.mp3"
+
+# create-advertisement-with-runway skill 用設定 (Skill D)
+# 使わない場合は runway.enabled: false（既存 create-advertisement / higgsfield のみ動く）
+# Runway は Web サブスクではなく Developer API のクレジット制（$0.01/credit, 従量・プラン無関係）。
+runway:
+  enabled: false              # true にすると Skill D が起動可能になる
+  cost_limit_usd: 10.00       # 1run あたりのハードコスト上限（USD）。balance tool 無し→client側推定で遵守
+  cost_safety_margin: 0.95    # 実停止しきい値（limit_usd * safety_margin で abort）
+  shots_per_video: 4          # 1動画あたりカット数
+  shot_duration_sec: 5        # gen4_turbo/gen4.5 の duration enum は [5,10]。合計 = formats.reel.duration
+  parallel: false             # MVP は直列固定
+  ratio: "720:1280"           # 9:16 は pixel 文字列で指定（"9:16" は不可、R-R19）
+  image:
+    # model ID literal 厳守（gen4_image はアンダースコア、R-R19）
+    model_preference:
+      - "gpt_image_2"         # 1st: OpenAI（Higgsfield 版と同条件比較用）
+      - "gen4_image"          # fallback: Runway native（5cr@720p=$0.05、安価）
+    max_iterations_per_shot: 3  # 初回 + リトライ最大2回
+  video:
+    # seedance2 は 36cr/s（5s≒$1.80）と高コスト。gen4_turbo（5cr/s=$0.25）を必ず fallback に置く。
+    model_preference:
+      - "seedance2"           # 1st: ByteDance（Higgsfield 版と同条件比較用、5s≒$1.80）
+      - "gen4_turbo"          # fallback: Runway native、安価・安定（cost guard 安全弁、5s=$0.25）
+    one_shot: true            # true: 動画失敗時は次候補→静止画fallback、同一モデルは再生成しない
+    fallback_to_static: true
+  tts:
+    # R-R18: TTS は opt-in。デフォルト false (lite モード) でナレーション台本のみ .md に生成
+    enabled: false            # default OFF（lite モード）。手動で narration を当てる前提
+    provider: "elevenlabs"
+    voice_id: ""              # ElevenLabs voice ID（enabled: true 時に必須）
+    model_id: "eleven_turbo_v2_5"
+  bgm:
+    # R-R18: BGM 自動埋込も opt-in
+    required: false           # default OFF。true なら assets/bgm/*.mp3 を <Audio> で全 shot 通敷
+    selection: "auto"         # auto / explicit
+    # explicit_file: "energetic-01.mp3"
