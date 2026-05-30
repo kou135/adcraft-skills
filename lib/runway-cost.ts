@@ -91,3 +91,40 @@ export function estimateRunwayImageCost(
 export function creditsToUsd(credits: number): number {
   return credits * CREDIT_USD;
 }
+
+// ---- pre-flight 検証ヘルパ（R-R2 / R-R19、Step 2/3/5/6 で API 呼び出し前に使う）----
+
+/** 価格テーブルが populate されているか（lib 破損 / 空テーブルの早期検出、R-R2）。 */
+export function isPricingTablePopulated(): boolean {
+  return (
+    Object.keys(RUNWAY_VIDEO_CREDITS_PER_SEC).length > 0 &&
+    Object.keys(RUNWAY_IMAGE_CREDITS_PER_IMAGE).length > 0
+  );
+}
+
+/** 既知の動画モデル ID か（config preference 検証用、R-R2）。 */
+export function isKnownVideoModel(model: string): boolean {
+  return model in RUNWAY_VIDEO_CREDITS_PER_SEC;
+}
+
+/** 既知の画像モデル ID か（config preference 検証用、R-R2）。 */
+export function isKnownImageModel(model: string): boolean {
+  return model in RUNWAY_IMAGE_CREDITS_PER_IMAGE;
+}
+
+/**
+ * ratio が Runway の pixel 文字列形式（"W:H"、各 3〜4 桁）か（R-R19）。
+ * "9:16" のような比率表記（1〜2 桁）は false を返す。例: "720:1280" → true。
+ */
+export function isValidRatio(ratio: string): boolean {
+  return /^\d{3,4}:\d{3,4}$/.test(ratio);
+}
+
+/**
+ * duration を許容 enum の最も近い値に丸める（R-R19）。
+ * gen4_turbo / gen4.5 / gen3a_turbo は [5, 10]。丸めが発生したら呼び出し側で
+ * issues.json に `duration_rounded` を記録すること。
+ */
+export function roundDuration(sec: number, allowed: number[] = [5, 10]): number {
+  return allowed.reduce((a, b) => (Math.abs(b - sec) < Math.abs(a - sec) ? b : a));
+}
