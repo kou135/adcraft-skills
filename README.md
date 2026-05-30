@@ -78,7 +78,7 @@ claude -p "create-advertisement skill で examples/product-sample のリール�
 
 ---
 
-## 提供される 3 つの Skill
+## 提供される 4 つの Skill
 
 ### `extract-product-ui`（Skill A）
 
@@ -114,6 +114,23 @@ Skill B の上位互換。**Higgsfield MCP（GPT Image 2 + Seedance 2.0 等）�
 - **不変ルール**：[`rules/create-advertisement-with-higgsfield-rules.md`](./rules/create-advertisement-with-higgsfield-rules.md)（v1.2.0 / R-H1〜R-H18）
 - **詳細**：[`skills/create-advertisement-with-higgsfield/SKILL.md`](./skills/create-advertisement-with-higgsfield/SKILL.md)
 
+### `create-advertisement-with-runway`（Skill D）
+
+Skill C と同型のパイプラインで、生成バックエンドを **Runway MCP（`gpt_image_2` / `gen4_image` + `seedance2` / `gen4_turbo` 等）と ElevenLabs MCP（TTS）** に差し替えたもの。lite / auto モード・コンテンツカテゴリ・voice-spec・symlink-safe レンダリングを Skill C から継承する。
+
+- **使用頻度**：中（Runway アカウント / Developer API で実写級を作る時）
+- **接続**：**ローカル stdio MCP**（[`runwayml/runway-api-mcp-server`](https://github.com/runwayml/runway-api-mcp-server)、`RUNWAYML_API_SECRET`、headless/cron 対応）
+- **課金**：Web サブスクではなく **Developer API のクレジット制**（$0.01/credit, 従量・プラン無関係）。balance tool が無いためコストは client 側で算出
+- **コスト**：seedance2 + gpt_image_2 で ~$8/リール、gen4_turbo + gen4_image（native）なら ~$1.2/リール
+- **得意分野**：Runway native モデルの品質、seedance2/gpt_image_2 を Runway 経由で利用（Higgsfield 版との比較）
+- **必須前提**：
+  - Runway Developer API キー（dev.runwayml.com、最低 $10 チャージ）+ Runway MCP（ローカル stdio）接続
+  - ElevenLabs（auto モード時のみ）+ ElevenLabs MCP 接続
+  - `products/<name>/assets/voice-spec/{category}.md` + `assets/reference/index.md` の整備
+- **Runway 固有の注意**：ratio は pixel 文字列 `"720:1280"`、model ID literal（`gen4.5` / `gen4_image`）、生成物 URL は 24h 失効（即DL）
+- **不変ルール**：[`rules/create-advertisement-with-runway-rules.md`](./rules/create-advertisement-with-runway-rules.md)（v1.0.0 / R-R1〜R-R19）
+- **詳細**：[`skills/create-advertisement-with-runway/SKILL.md`](./skills/create-advertisement-with-runway/SKILL.md) / 運用ガイド [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)
+
 ### どちらの skill を使う？
 
 | やりたいこと | 推奨 |
@@ -121,10 +138,12 @@ Skill B の上位互換。**Higgsfield MCP（GPT Image 2 + Seedance 2.0 等）�
 | まず試してみたい / 無料でやりたい | Skill B（`create-advertisement`） |
 | イラスト・タイポグラフィ系のリール | Skill B |
 | 実写級の映像 + ナレーションが欲しい | Skill C（`create-advertisement-with-higgsfield`） |
-| ペルソナの一人称モノローグ動画 | Skill C |
-| ブランド世界観をプロフェッショナルに表現 | Skill C |
+| ペルソナの一人称モノローグ動画 | Skill C / Skill D |
+| ブランド世界観をプロフェッショナルに表現 | Skill C / Skill D |
 | 量産（月 10 本以上） | Skill B（コスト 0）|
 | 試験運用 / 高品質少数本 | Skill C |
+| Runway アカウント / Developer API で実写級を作る | Skill D（`create-advertisement-with-runway`） |
+| Runway native（gen4_turbo / gen4_image）で安価に実写級 | Skill D |
 
 ---
 
@@ -157,12 +176,21 @@ create-advertisement skill で myproduct の動画を生成して
 adcraft/
 ├── skills/
 │   ├── extract-product-ui/SKILL.md
-│   └── create-advertisement/SKILL.md
-├── rules/create-advertisement-rules.md
+│   ├── create-advertisement/SKILL.md
+│   ├── create-advertisement-with-higgsfield/SKILL.md   # Skill C
+│   └── create-advertisement-with-runway/SKILL.md       # Skill D
+├── rules/
+│   ├── create-advertisement-rules.md
+│   ├── create-advertisement-with-higgsfield-rules.md   # R-H1〜R-H18
+│   └── create-advertisement-with-runway-rules.md       # R-R1〜R-R19
 ├── lib/
 │   ├── manifest.ts           # 出力メタデータの atomic write
 │   ├── validators.ts         # 視覚検証チェックリスト
-│   └── remotion-helpers.ts   # フォーマットプリセット
+│   ├── remotion-helpers.ts   # フォーマットプリセット
+│   ├── cost-tracker.ts       # コスト追跡（Skill C / D 共通）
+│   ├── higgsfield-checklist.ts  # Skill C 画像チェック
+│   ├── runway-cost.ts        # Skill D コスト計算（balance 非対応の代替）
+│   └── runway-checklist.ts   # Skill D 画像チェック
 ├── templates/
 │   ├── core.md.template
 │   ├── config.yaml.template
@@ -265,11 +293,11 @@ products/<name>/
 
 ---
 
-## MCP セットアップ（Skill C 利用時）
+## MCP セットアップ（Skill C / D 利用時）
 
-Skill C は以下 2 つの MCP server に依存する。事前にセットアップが必要。
+Skill C は Higgsfield MCP + ElevenLabs MCP、Skill D は Runway MCP + ElevenLabs MCP に依存する。事前にセットアップが必要。
 
-### Higgsfield MCP
+### Higgsfield MCP（Skill C）
 
 ```bash
 claude mcp add higgsfield --type http --url https://mcp.higgsfield.ai/mcp
@@ -280,7 +308,24 @@ claude mcp add higgsfield --type http --url https://mcp.higgsfield.ai/mcp
 - **Starter $15/月**：image2 + Seedance 2.0 + kling 等すべて利用可、200 cred（kling 中心で月 ~5 リール）
 - ⚠️ **Seedance 2.0 は地域により制限される可能性あり**。日本ブロックが報告されている。失敗時は R-H5 により静止画 + ZoomIn に自動 fallback されるので致命的ではない
 
-### ElevenLabs MCP
+### Runway MCP（Skill D）
+
+ローカル stdio MCP（headless/cron 対応）を前提とする。詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)。
+
+```bash
+# 1. dev.runwayml.com で組織作成 → API キー発行（最低 $10 チャージ要）
+export RUNWAYML_API_SECRET="key_xxxxx"
+# 2. 公式 MCP サーバを clone + build
+git clone https://github.com/runwayml/runway-api-mcp-server
+cd runway-api-mcp-server && npm install && npm run build
+# 3. Claude Code に追加
+claude mcp add runway -e RUNWAYML_API_SECRET=$RUNWAYML_API_SECRET -e MCP_TOOL_TIMEOUT=1000000 \
+  -- node /abs/path/to/runway-api-mcp-server/build/index.js
+```
+
+**課金**：Web サブスクではなく **Developer API のクレジット制**（$0.01/credit, 従量・プラン無関係）。Web プランを買っても API クレジットは付かない。
+
+### ElevenLabs MCP（Skill C / D 共通、auto モード時）
 
 ```bash
 # 1. ElevenLabs ダッシュボードで API キーを発行 (https://elevenlabs.io)
@@ -300,11 +345,12 @@ claude mcp add elevenlabs --type stdio --command "uvx elevenlabs-mcp" --env ELEV
 
 ```bash
 claude mcp list
-# higgsfield: ... ✓ Connected
-# elevenlabs: ... ✓ Connected
+# higgsfield: ... ✓ Connected   （Skill C）
+# runway:     ... ✓ Connected   （Skill D）
+# elevenlabs: ... ✓ Connected   （auto モード時）
 ```
 
-両方 `✓ Connected` になれば準備完了。Skill C が R-H1 で起動時に疎通確認する。
+利用する skill の MCP が `✓ Connected` になれば準備完了。Skill C は R-H1、Skill D は R-R1 で起動時に疎通確認する。
 
 ---
 
