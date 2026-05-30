@@ -43,7 +43,7 @@ export type CostHistoryEntry = {
   step: string;
   shot_index?: number;
   model: string;
-  provider?: "higgsfield" | "elevenlabs";
+  provider?: "higgsfield" | "elevenlabs" | "runway";
   request_id?: string;
   cost_usd: number;
   spent_running_usd: number;
@@ -62,7 +62,7 @@ export type CostTracker = {
     step: string;
     shot_index?: number;
     model: string;
-    provider?: "higgsfield" | "elevenlabs";
+    provider?: "higgsfield" | "elevenlabs" | "runway";
   } | null;
 };
 
@@ -88,7 +88,7 @@ export function reserve(
     step: string;
     model: string;
     shot_index?: number;
-    provider?: "higgsfield" | "elevenlabs";
+    provider?: "higgsfield" | "elevenlabs" | "runway";
   }
 ): void {
   if (t._pending !== null) {
