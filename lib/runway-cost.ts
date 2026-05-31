@@ -1,18 +1,19 @@
 /**
- * Runway cost estimation for the create-advertisement-with-runway skill.
+ * Runway cost / credit estimation for the create-advertisement-with-runway skill.
  *
- * Runway の MCP (runwayml/runway-api-mcp-server) / Developer API は higgsfield の
- * balance() に相当する残高 / transactions tool を提供しない。そのため各生成コストは
- * model + duration + resolution からクライアント側で算出する必要がある (R-R6)。
+ * 本 skill は **(A) hosted MCP（https://mcp.runwayml.com/mcp、OAuth）** で接続し、課金は
+ * **Runway の Web サブスク・クレジット枠**から引かれる（Higgsfield と同型）。hosted MCP は
+ * 残高 / per-call コストを返さない可能性が高いため、消費はクライアント側で **クレジット単位**に推定する (R-R6)。
  *
- * 価格は Developer API のクレジット制（1 credit = $0.01、2026-05 時点）。
- * クレジット単価・モデル ID は頻繁に変わるため、本テーブルはあくまで fallback 既定値。
- * 重要な run の前には docs.dev.runwayml.com/guides/pricing を確認すること。
+ * ⚠️ 下記テーブルの credit 値は **Developer API の pricing（2026-05）から得た best-known 推定**。
+ *    hosted（web-app サブスク）の実消費はモデルにより異なりうる（例：gen4.5 は web-app 25cr/s vs API 12cr/s。
+ *    seedance2 / gpt_image_2 の web-app 消費は未確認）。**接続テストで balance / library の前後差を実測して校正すること。**
+ *    USD 換算（CREDIT_USD）は概算 proxy。サブスク運用では「真のハードキャップ = 月次クレジット枠（Standard 625/月 等）」。
  *
  * 対応: lib/cost-tracker.ts の reserve(tracker, estimateRunwayXxxCost(...), {...})
  */
 
-/** 1 credit あたりの USD 単価（Developer API）。 */
+/** 1 credit あたりの USD 換算（概算 proxy。Dev API は $0.01、hosted サブスクでは厳密な $/cr は無い）。 */
 export const CREDIT_USD = 0.01;
 
 /**
@@ -73,8 +74,8 @@ function resolveTier(rate: Tiered, tier?: string): number {
   return Math.max(...Object.values(rate));
 }
 
-/** 動画 1 本（durationSec 秒）の推定コスト（USD）。 */
-export function estimateRunwayVideoCost(
+/** 動画 1 本（durationSec 秒）の推定消費クレジット（hosted/A 運用の主単位）。 */
+export function estimateRunwayVideoCredits(
   model: string,
   durationSec: number,
   opts?: { resolution?: string },
@@ -82,18 +83,33 @@ export function estimateRunwayVideoCost(
   const rate = RUNWAY_VIDEO_CREDITS_PER_SEC[model];
   const creditsPerSec =
     rate === undefined ? FALLBACK_VIDEO_CREDITS_PER_SEC : resolveTier(rate, opts?.resolution);
-  return creditsPerSec * durationSec * CREDIT_USD;
+  return creditsPerSec * durationSec;
 }
 
-/** 画像 1 枚の推定コスト（USD）。 */
-export function estimateRunwayImageCost(
+/** 画像 1 枚の推定消費クレジット（hosted/A 運用の主単位）。 */
+export function estimateRunwayImageCredits(
   model: string,
   opts?: { resolution?: string },
 ): number {
   const rate = RUNWAY_IMAGE_CREDITS_PER_IMAGE[model];
-  const credits =
-    rate === undefined ? FALLBACK_IMAGE_CREDITS : resolveTier(rate, opts?.resolution);
-  return credits * CREDIT_USD;
+  return rate === undefined ? FALLBACK_IMAGE_CREDITS : resolveTier(rate, opts?.resolution);
+}
+
+/** 動画 1 本の推定コスト（USD 概算 proxy。cost-tracker 連携用）。 */
+export function estimateRunwayVideoCost(
+  model: string,
+  durationSec: number,
+  opts?: { resolution?: string },
+): number {
+  return estimateRunwayVideoCredits(model, durationSec, opts) * CREDIT_USD;
+}
+
+/** 画像 1 枚の推定コスト（USD 概算 proxy。cost-tracker 連携用）。 */
+export function estimateRunwayImageCost(
+  model: string,
+  opts?: { resolution?: string },
+): number {
+  return estimateRunwayImageCredits(model, opts) * CREDIT_USD;
 }
 
 /** クレジット数を直接 USD に変換するユーティリティ。 */
