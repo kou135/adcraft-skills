@@ -19,10 +19,12 @@
 
 ## ゴール
 
-- Runway MCP（`runwayml/runway-api-mcp-server`、ローカル stdio、`RUNWAYML_API_SECRET`）と
+- **Runway hosted MCP（`https://mcp.runwayml.com/mcp`、Streamable HTTP、OAuth）** と
   ElevenLabs MCP を用いて、`products/<name>/core.md` のマーケ方針に基づく実写級の広告動画を生成する。
+  課金は **Runway の Web サブスク・クレジット枠**から引かれる（Higgsfield と同型。clone / API キー不要）。
 - MVP は **1 本 / 20 秒 / 4 カット / 9:16**。
-- 1 run のコストは `config.yaml.runway.cost_limit_usd`（デフォルト $10）を絶対遵守する。
+- 1 run の消費は `config.yaml.runway.credit_limit_per_run`（推定クレジット上限）と
+  `cost_limit_usd`（USD 概算 proxy）の小さい方で頭打ちにする。**真のハードキャップは月次サブスク枠**（Standard 625/月 等）。
 - 既存 `create-advertisement` / `create-advertisement-with-higgsfield` skill / ルール / output 構造を
   壊さず併存する。
 - 配信は本 skill の責務外（既存 R10 を継承）。
@@ -33,32 +35,34 @@
 
 skill 起動時に以下を順に確認し、1 つでも失敗したら停止する：
 
-1. Runway MCP に対し `runway_getOrg()` 等の lightweight call → 200 OK & 組織情報（クレジット残高含む）が返る
-   - Runway MCP には higgsfield の `list_models()` が無い（R-R2 参照）。疎通は `runway_getOrg` で行う。
+1. Runway hosted MCP に lightweight call（組織/プラン情報やモデル一覧を返す確認系 tool）→ 200 OK
+   - **hosted MCP が公開する tool 名は接続時に実機確認する**（`/mcp` で列挙される。本ファイル/SKILL.md の
+     `runway_generateImage` 等は期待マッピングで、実 tool 名と異なれば実機名に合わせる、R-R19）。
+   - hosted は初回ブラウザ OAuth が 1 回必要。以後はトークンがキャッシュ＋リフレッシュされ headless 可（Higgsfield と同様）。
 2. `lib/runway-cost.ts` の `isPricingTablePopulated()` が true（価格テーブルが空でない）。false / import 不能なら
    `LIB_RUNWAY_COST_NOT_FOUND` で停止（model 解決・コスト算出の前提が壊れているため、R-R2）
 3. ElevenLabs MCP の lightweight call（例: `list_voices()`）→ 200 OK（**auto モード時のみ必須**、R-R18）
 4. `products/<name>/assets/reference/*.{png,jpg,jpeg,webp}` が 1 枚以上存在
-5. **各 reference 画像のファイルサイズが ≤16MB**（Runway の base64 data URI 制約、R-R3 / R-R19）。
-   超過があれば `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止し、(a) 16MB 未満にリサイズ、または
+5. **各 reference 画像が base64 化後 ≤16MB**（`fitsBase64Limit(fileBytes)` で判定、R-R3 / R-R19）。
+   超過があれば `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止し、(a) リサイズ（生 ~11.5MB 未満）、または
    (b) 公開 URL にアップロードして `referenceImages` の `uri` に HTTPS URL を渡す、を案内する
 6. `products/<name>/assets/bgm/*.mp3` が 1 枚以上存在（`bgm.required: true` のとき）
 
 停止時は `MCP_NOT_CONNECTED:runway` / `REFERENCE_IMAGE_MISSING` / `BGM_MISSING` 等の明確な reason を
-stdout に出し、`claude mcp add runway -e RUNWAYML_API_SECRET=… -- node …/build/index.js` 手順を案内する。
+stdout に出し、`claude mcp add --transport http runway https://mcp.runwayml.com/mcp` →（Claude Code 内で）`/mcp` で
+OAuth 認証、の手順を案内する（clone / API キー不要）。
 
 ### R-R2. モデル ID は config preference から解決、ハードコード禁止
 
-- Runway MCP は `list_models()` を提供しない。モデル ID は `config.yaml.runway.image.model_preference` と
-  `.video.model_preference` の優先順から取り、`lib/runway-cost.ts` の `isKnownImageModel()` /
-  `isKnownVideoModel()`（価格テーブル = 既知モデル集合）で検証して最初に true になる 1 つを使う。
+- モデル ID は `config.yaml.runway.image.model_preference` と `.video.model_preference` の優先順から取り、
+  `lib/runway-cost.ts` の `isKnownImageModel()` / `isKnownVideoModel()`（価格テーブル = 既知モデル集合）で
+  検証して最初に true になる 1 つを使う（hosted がモデル一覧 tool を公開していても、選定は preference 主導）。
 - preference に書かれた全モデルが既知集合にも存在しないなら停止（`MODEL_NOT_KNOWN`）。
-- ⚠️ **静的テーブルの宿命**：higgsfield の `list_models()` 動的解決と異なり、Runway 側でモデル追加 /
-  価格改定があると `lib/runway-cost.ts` が古くなる。価格が重要な run では実行前に
-  docs.dev.runwayml.com/guides/pricing を確認し、必要なら `lib/runway-cost.ts` を更新する（R-R19.1）。
+- ⚠️ **静的テーブルの宿命**：Runway 側でモデル追加 / 価格改定があると `lib/runway-cost.ts` が古くなる。
+  さらに **hosted（web-app サブスク）のクレジット消費は Dev API 由来の本テーブルとずれうる**（gen4.5 等）。
+  重要な run の前に runwayml.com/pricing（web-app）を確認し、接続テストで実消費を実測して校正する（R-R19.1）。
 - model ID は **literal を厳守**（R-R19）。特に `gen4.5`（ドット）/ `gen4_image`（アンダースコア）。
-- 選択結果は `output/<product>/<date>/.assets/<id>/assets-manifest.json` にキャッシュし、同セッション中は
-  再解決不要。価格が重要な run では実行前に docs.dev.runwayml.com/guides/pricing を確認すること。
+- 選択結果は `output/<product>/<date>/.assets/<id>/assets-manifest.json` にキャッシュし、同セッション中は再解決不要。
 
 ### R-R3. 商品リファレンス画像の一貫性参照
 
@@ -88,27 +92,26 @@ stdout に出し、`claude mcp add runway -e RUNWAYML_API_SECRET=… -- node …
 - preference に複数動画モデルがある場合（例：`seedance2` 失敗 → `gen4_turbo`）、静止画に落ちる前に
   次候補モデルを 1 回試行してよい（R-R4 の「動画 1 回のみ」は同一モデルに対して適用）。
 
-### R-R6. コスト上限の絶対遵守（client 側計算）
+### R-R6. クレジット消費の上限遵守（hosted / client 側推定）
 
-- Runway MCP は balance / transactions tool を提供しない。コストは `lib/runway-cost.ts` の
-  `estimateRunwayImageCost` / `estimateRunwayVideoCost` で **model + duration + resolution から client 側算出**する。
-- `config.yaml.runway.cost_limit_usd`（未指定なら $10）を `cost_tracker.limit_usd` に反映。
-- 各 `runway_generateImage` / `runway_generateVideo` / TTS 呼び出し**前**に予測判定：
+- **真のハードキャップは月次サブスク・クレジット枠**（Standard 625/月 等）。Runway 側が枠超過を物理的に止めるため、
+  暴走課金リスクは Dev API より低い。本 skill の cost guard はその枠を 1 run で食い潰さないための**推定ベースの安全弁**。
+- hosted MCP は per-call コスト/残高を返さない可能性が高い。消費は `lib/runway-cost.ts` の
+  `estimateRunwayImageCredits` / `estimateRunwayVideoCredits` で **model + duration + resolution から client 側にクレジット推定**する。
+- `config.yaml.runway.credit_limit_per_run`（推定クレジット上限）と `cost_limit_usd`（USD 概算 proxy、`cost_tracker` 連携用）
+  の **どちらか先に到達した方**で abort。各 `generate*` / TTS 呼び出し**前**に予測判定：
 
   ```
-  if (spent_usd + reserved_usd + next_call_cost > limit_usd * safety_margin) → abort
+  if (spent + reserved + next_call > limit * safety_margin) → abort   // credit と USD の両方で評価
   ```
 
-- `safety_margin` のデフォルトは `0.95`。abort 時は `tracker.aborted = true` を立て（cost-report の
-  `aborted_by_cost` を正しく真にするため、R-R10）、`issues.json` に `cost_limit_reached`（at_step / at_shot /
-  predicted_cost）を記録し、**生成済カットだけで最終 Remotion 合成を試行**する。headless 時もユーザー確認なしで即 abort。
-- **0 カット abort 時（生成済が 1 枚も無い）は Remotion 合成を試みず、`items` 空の manifest と cost-report を
-  書いて clean に終了する**（no-shot render を回避。base R-H6 継承）。
-- 見積はテーブル価格に基づく **client 側推定値**で実課金と一致しない場合がある。cost guard が踏み抜かない
-  よう、画像モデルは worst case（gpt_image_2 = 41 cr）で見積もる（`lib/runway-cost.ts`）。
-- ⚠️ seedance2 は 36 cr/s（720p、5s≒$1.80）と高い。4 カットで動画だけ ≒$7.2、画像込みで $8 前後となり
-  $9.50（= limit × safety_margin）に近い。preference に `gen4_turbo`（5 cr/s, 5s=$0.25）を fallback として置き、
-  cost guard 到達時の安全弁にする。コスト優先の初回は native（gen4_turbo / gen4_image）を 1st にするのも可。
+- `safety_margin` のデフォルトは `0.95`。abort 時は `tracker.aborted = true` を立て（`aborted_by_cost` を真にするため、R-R10）、
+  `issues.json` に `cost_limit_reached`（at_step / at_shot / predicted_credits）を記録し、**生成済カットだけで最終 Remotion 合成を試行**する。
+- **0 カット abort 時（生成済が 1 枚も無い）は Remotion 合成を試みず、`items` 空の manifest と cost-report を書いて clean に終了**（base R-H6 継承）。
+- 推定は best-known テーブル値で、**hosted（web-app）の実消費とずれうる**。cost guard が踏み抜かないよう画像は worst case
+  （gpt_image_2 = 41 cr）で見積もる。**seedance2 / gpt_image_2 の web-app クレジット消費は接続テストで実測校正**（R-R2 / R-R19.1）。
+- ⚠️ seedance2 は高消費（Dev API 36 cr/s 相当）。preference に `gen4_turbo`（5 cr/s）を fallback として置き安全弁にする。
+  コスト優先の初回は native（gen4_turbo / gen4_image）を 1st にするのも可。
 
 ### R-R7. 直列実行
 
@@ -254,8 +257,11 @@ Step 7 と Step 8 の間に **Step 7.5 ポストマスター**を必ず実行：
 
 Runway バックエンド特有の落とし穴。SKILL.md 全 Step でこれらを厳守する：
 
-1. **`list_models()` / balance tool が無い**：モデルは config preference から解決（R-R2）、コストは client 側算出（R-R6）。
-2. **生成物 URL は 24h で失効**：task `SUCCEEDED` 後**即ダウンロード**して永続化（R-R9）。URL 直参照禁止。
+1. **hosted MCP（OAuth、Web サブスク課金）**：①公開 tool 名は接続時に `/mcp` で実機確認（本ファイルの
+   `runway_generateImage` 等は期待マッピング）②per-call コスト/残高は返らない前提でコストは client 側にクレジット推定（R-R6）
+   ③モデルは config preference から解決（R-R2）④初回 OAuth は 1 回、以後はトークン再利用で headless 可。
+2. **生成物 URL は 24h で失効**：task 完了後**即ダウンロード**して永続化（R-R9）。URL 直参照禁止。
+   （生成物は Runway library にも保存されるが、ローカル DL を正とする）
 3. **ratio は pixel 文字列**：9:16 は `"9:16"` ではなく **`"720:1280"`**（gen4.5 i2v は `832:1104` / `672:1584` も）。
    landscape は `1280:720` 等。**⚠️ image_to_video（動画）と text_to_image（画像、gen4_image）で許容 ratio enum が
    異なる**。`"720:1280"` は動画側で確認済みだが、画像生成側（gen4_image / gpt_image_2）の portrait 文字列は
