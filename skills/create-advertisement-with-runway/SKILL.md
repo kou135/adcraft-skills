@@ -13,8 +13,9 @@ description: products/<name>/ の core.md と config.yaml.runway: を入力に�
 
 - **`remotion-dev/skills`（remotion-best-practices）**：Remotion API の正しい使い方を提供する公式 Skill。本 Skill は Remotion 固有の実装方法を**再定義しない**。
   - 未インストールの場合：`npx skills add remotion-dev/skills` を案内し停止。
-- **Runway MCP**: `runwayml/runway-api-mcp-server`（ローカル stdio、Node.js）。clone + `npm install && npm run build` 後、`claude mcp add runway -e RUNWAYML_API_SECRET=<key> -e MCP_TOOL_TIMEOUT=1000000 -- node /abs/path/build/index.js`。`RUNWAYML_API_SECRET` は dev.runwayml.com で発行（最低 $10 チャージ要）。未接続なら停止し案内。
-  - 公開 tool：`runway_generateImage` / `runway_generateVideo` / `runway_getTask` / `runway_cancelTask` / `runway_upscaleVideo` / `runway_editVideo` / `runway_getOrg`。**`list_models()` / balance tool は無い**（R-R2 / R-R6）。
+- **Runway MCP（hosted）**: 公式リモート MCP `https://mcp.runwayml.com/mcp`（Streamable HTTP, OAuth）。`claude mcp add --transport http runway https://mcp.runwayml.com/mcp` →（Claude Code 内で）`/mcp` でブラウザ OAuth。**clone / build / API キー不要**。課金は Runway の Web サブスク・クレジット枠（Higgsfield と同型）。未接続なら停止し案内。
+  - 初回 OAuth は 1 回だけ。以後はトークン再利用で headless 可（Higgsfield と同様）。
+  - **公開 tool 名は接続時に `/mcp` で実機確認する**。本書中の `runway_generateImage` / `runway_generateVideo` / `runway_getTask` 等は **期待マッピング**で、hosted の実 tool 名が異なれば実機名に合わせる（R-R19）。**per-call コスト/残高は返らない前提**（コストは client 側クレジット推定、R-R6）。
 - **ElevenLabs MCP**: 公式（APIキー要）。**auto モード時のみ必須**。未接続なら（auto 時）停止。
 - **`lib/cost-tracker.ts`** / **`lib/runway-cost.ts`** / **`lib/runway-checklist.ts`**: 本skill実装で利用する内部ユーティリティ。
 - **`rules/create-advertisement-with-runway-rules.md`**: 不変ルール（R-R1〜R-R19）。skill起動時に必ず読む。
@@ -39,7 +40,7 @@ R-R11（基底 `create-advertisement` の R12「headless 時のユーザー確�
 ### Step 0. ルール読み込み（必須） — R-R1
 
 1. `rules/create-advertisement-with-runway-rules.md` を Read で読み込む。R-R1〜R-R19 を**必ず適用**する。
-2. Runway MCP の `runway_getOrg()` を呼ぶ → 200 OK & 組織情報（クレジット残高含む）を確認。失敗なら `MCP_NOT_CONNECTED:runway` で停止し、`claude mcp add runway …` 手順を案内。
+2. Runway hosted MCP の lightweight call（`/mcp` で列挙される確認系/モデル一覧 tool。**実 tool 名は接続時確認**）→ 200 OK。失敗なら `MCP_NOT_CONNECTED:runway` で停止し、`claude mcp add --transport http runway https://mcp.runwayml.com/mcp` →（Claude Code 内で）`/mcp` で OAuth、の手順を案内（clone/キー不要）。
 3. `lib/runway-cost.ts` の `isPricingTablePopulated()` を呼ぶ → true を確認。false / import 不能なら `LIB_RUNWAY_COST_NOT_FOUND` で停止（model 解決・コスト算出の前提が壊れているため、R-R2）。
 4. （auto モード時のみ）ElevenLabs MCP の lightweight call → 200 OK 確認。失敗なら停止。
    - ※ lite / auto は Step 1 の config parse で確定するため、この ElevenLabs 疎通は実務上 Step 1 直後に行ってよい（`tts.enabled: true` のときだけ）。
@@ -60,25 +61,31 @@ R-R11（基底 `create-advertisement` の R12「headless 時のユーザー確�
 8. `formats.reel.enabled == true && count >= 1` を確認
 9. **R-R17 read-only 監視のため、`assets/voice-spec/` と `assets/reference/` 配下の全ファイル mtime を `assets_mtime_snapshot.json` に記録**
 
-### Step 2. モデル ID 解決 + Cost Tracker 初期化 — R-R2, R-R6
+### Step 2. モデル ID 解決 + Cost/Credit Tracker 初期化 — R-R2, R-R6
 
-Runway MCP に `list_models()` が無いため、**config preference から解決**し `lib/runway-cost.ts` の価格テーブル（既知モデル集合）で検証する：
+モデルは **config preference から解決**し `lib/runway-cost.ts` の既知モデル集合で検証する。hosted は per-call コストを返さないため、消費は **クレジット推定**で追う（USD は proxy）：
 
 ```ts
 import { createCostTracker } from "../../lib/cost-tracker";
-import { isKnownImageModel, isKnownVideoModel } from "../../lib/runway-cost";
+import {
+  isKnownImageModel, isKnownVideoModel,
+  estimateRunwayImageCredits, estimateRunwayVideoCredits, // クレジット推定（主単位）
+} from "../../lib/runway-cost";
 
 const image_model_id = cfg.runway.image.model_preference.find(isKnownImageModel);
 const video_model_id = cfg.runway.video.model_preference.find(isKnownVideoModel);
 // どちらも見つからなければ MODEL_NOT_KNOWN で停止
 
+// USD proxy 用（cost_tracker は USD 数値で動く）。credit_limit_per_run は別途クレジットで追跡する
 const cost_tracker = createCostTracker({
   limit_usd: cfg.runway.cost_limit_usd ?? 10.0,
   safety_margin: cfg.runway.cost_safety_margin ?? 0.95,
 });
+let spent_credits = 0;                                   // 推定消費クレジット累計
+const credit_limit = cfg.runway.credit_limit_per_run ?? 200;
 ```
 
-選択結果は後で `assets-manifest.json` にキャッシュする。model ID は literal を厳守（R-R19、`gen4.5` ドット / `gen4_image` アンダースコア）。
+cost guard は **credit（`spent_credits + 次の推定 ≤ credit_limit × margin`）と USD（cost_tracker）の両方**で判定し、先に到達した方で abort（R-R6）。選択結果は `assets-manifest.json` にキャッシュ。model ID は literal を厳守（R-R19、`gen4.5` ドット / `gen4_image` アンダースコア）。**真のハードキャップは月次サブスク枠**。
 
 ### Step 3. ショット計画 — R-R14, R-R19
 
@@ -111,6 +118,9 @@ Runway は upload→URL 方式ではなく `referenceImages` 配列に直接渡�
 
 ### Step 5. 画像生成ループ（カット単位、直列） — R-R4, R-R6, R-R8, R-R9
 
+> **tool 名は接続時確認**（hosted の実 tool 名が `runway_generateImage` と異なれば置換、R-R19）。
+> **cost guard はクレジットと USD proxy の両方**で評価：各試行前に `spent_credits + estimateRunwayImageCredits(image_model_id, {resolution:"720p"}) ≤ credit_limit × margin` も確認し、超過なら abort（R-R6）。成功時は `spent_credits += 推定` を加算。
+
 各カット index 0..3 について。**cost guard → reserve → 呼び出し → commit(課金発生時) / cancel(無課金失敗時) を「1 試行ごと」に完結**させる（リトライも各回が独立した paid call。reserve と commit/cancel は試行ごとに 1 対 1。reserve せずに commit すると `_pending=null` で throw するため厳守。F5 / R-R6）：
 
 1. **pre-flight 検証（ループ前に 1 回、R-R19）**：`isValidRatio(image_ratio)` && `isKnownImageModel(image_model_id)` を確認（不正なら fail-fast）。`image_ratio` は画像生成エンドポイント用（動画と enum が異なりうる、R-R19.3）。
@@ -128,8 +138,10 @@ Runway は upload→URL 方式ではなく `referenceImages` 配列に直接渡�
 
 画像 OK だったカットだけ：
 
-> **Runway image_to_video の `duration` は固定 enum（gen4_turbo / gen4.5 は `[5,10]`）。`ratio` は pixel 文字列（9:16 = `"720:1280"`）。両方 literal を厳守（R-R19）。**
-> seedance2 は 36 cr/s（5s≒$1.80）と高コスト。preference に `gen4_turbo`（5 cr/s, 5s=$0.25）を fallback として置く。
+> **tool 名は接続時確認**（hosted の実 tool 名が `runway_generateVideo` と異なれば置換、R-R19）。
+> **`duration` は固定 enum**（gen4_turbo / gen4.5 は `[5,10]`、seedance2 は丸めない）。**`ratio` は pixel 文字列（9:16 = `"720:1280"`）**。
+> **cost guard はクレジットと USD proxy の両方**：各試行前に `spent_credits + estimateRunwayVideoCredits(model, duration, {resolution:"720p"}) ≤ credit_limit × margin` も確認（R-R6）。成功時 `spent_credits += 推定`。
+> seedance2 は高消費（Dft API 36 cr/s 相当、web-app 値は接続時実測）。preference に `gen4_turbo`（5 cr/s）を fallback に置く。
 
 `video_model_id`（preference 1st）と、fallback 候補（preference 2nd 以降）それぞれを「1 試行」とし、**各試行で guard → reserve → 呼び出し → commit/cancel を完結**させる（F5）：
 
@@ -293,8 +305,8 @@ import { TaskflowRwReel1 } from "./_generated_/taskflow-rw-reel-1";
 1. **投稿コピー（R-R12）**：`<id>.md` を生成（フロントマター + フック + 本文 + ハッシュタグ 5 本、`variation_note` 先頭に `[category]` タグ）。
    - **lite モード時は加えて「## ナレーション台本」セクションを必ず付ける**（R-R18）。shot 別に：シーン要約 / 想定テキスト / 想定発話時間 / 強調キーワード / SSML 例 / 推奨 voice / 推奨音量。末尾に CapCut / Premiere 組み立て手順。欠落時 `MISSING_NARRATION_SCRIPT` で fail
    - `lib/manifest.ts` の `writeManifestAtomic` と同じ atomic 書き込みを使う
-2. **manifest.json**（atomic write）：`engine: "runway"`、`rules_version: "1.0.0"`、`runway_rules_version: "1.0.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に `category` / **`viewpoint`**（R-R14。`variation_note` の 2 階層目 `[category/viewpoint]` から抽出した視点タグ。タグ無し時は当該カテゴリ「視点パレット」1st を文字列化。Step 3 の履歴チェックの参照源）/ `audio_mode`（R-R18）/ `bgm_embedded`（R-R18）/ `ratio`（R-R19）を追加
-3. **cost-report.json**（atomic write）：`toReport(tracker, {session...}, { notes })` の戻り値に `audio.loudness`（auto 時のみ実数値、lite 時 null）を足す。**成功 / 失敗 / abort いずれでも必ず出力**（R-R10。abort 時は `tracker.aborted=true` が立っているので `aborted_by_cost` が正しく真になる、F14）。`notes` には「コストは `lib/runway-cost.ts` の価格表（最終検証: `PRICING_TABLE_VERIFIED`）に基づく **client 側推定値**で、Runway 課金と一致しない場合あり。最終額は Runway billing で確認」+ 使用モデル / 適用クレジット単価を必ず明記（R-R6）
+2. **manifest.json**（atomic write）：`engine: "runway"`、`connection: "hosted_mcp"`、`rules_version: "1.0.0"`、`runway_rules_version: "1.0.0"`、`cost.{limit_usd, spent_usd, credit_limit_per_run, spent_credits_est, aborted_by_cost}`、`items[].models_used` を含む。各 item に `category` / **`viewpoint`**（R-R14。`variation_note` の 2 階層目 `[category/viewpoint]` から抽出した視点タグ。タグ無し時は当該カテゴリ「視点パレット」1st を文字列化。Step 3 の履歴チェックの参照源）/ `audio_mode`（R-R18）/ `bgm_embedded`（R-R18）/ `ratio`（R-R19）を追加
+3. **cost-report.json**（atomic write）：`toReport(tracker, {session...}, { notes })` の戻り値に `audio.loudness`（auto 時のみ実数値、lite 時 null）と **`credits: { limit_per_run, spent_est }`**（推定消費クレジット）を足す。**成功 / 失敗 / abort いずれでも必ず出力**（R-R10。abort 時は `tracker.aborted=true` が立っているので `aborted_by_cost` が正しく真になる、F14）。`notes` には「**hosted MCP（Web サブスク課金）**。消費は `lib/runway-cost.ts`（最終検証: `PRICING_TABLE_VERIFIED`）に基づく **client 側クレジット推定**で web-app 実消費とずれる場合あり（特に seedance2 / gpt_image_2）。**真の残量は Runway library / プラン残クレジットで確認**」+ 使用モデルを必ず明記（R-R6 / R-R2）
 4. **issues.json**：途中で記録した issue がある場合のみ書く。R-R17 read-only 違反、R-R18 違反、R-R19 の `duration_rounded` 等もここに記録
 5. **R-R17 read-only 監査**：Step 1 で記録した `assets_mtime_snapshot.json` を再チェック、変更されていれば `READ_ONLY_VIOLATION:{path}` を issues.json に記録（停止はしない）
 6. **中間ファイル**：`.assets/<id>/` は basic 残す（auto では `narration-N.mp3` + `.mastered.mp3` 両方）。`strict_mode: true` のみ raw を削除
@@ -357,14 +369,15 @@ cd /path/to/adcraft && \
 **ヘッドレス実行で詰まらないためのポイント**：
 - `bypassPermissions` を使う（`acceptEdits` だと `pnpm exec remotion still` 等の Bash で止まる）
 - プロンプトに「承認不要、自律実行して」等を含める（R-R11 のユーザー確認をスキップさせる）
-- Runway MCP は **ローカル stdio + `RUNWAYML_API_SECRET`** なので headless で動く（hosted MCP の OAuth は cron 不可）
+- Runway hosted MCP は **初回ブラウザ OAuth（1 回）後はトークン再利用で headless 可**（Higgsfield と同様）。cron 前に一度対話で `/mcp` 認証を済ませておくこと（完全新規マシンでの無人ブートストラップは不可）
 - `--output-format stream-json --verbose` で無音状態を回避
 
 ## エラーハンドリング
 
 | 状況 | 対応 |
 |---|---|
-| Runway MCP 未接続 | 起動時停止、`claude mcp add runway …` 手順を案内 |
+| Runway MCP 未接続 | 起動時停止、`claude mcp add --transport http runway https://mcp.runwayml.com/mcp` + `/mcp` OAuth 手順を案内 |
+| hosted の tool 名が想定と違う | 接続時 `/mcp` で実 tool 名を確認し、Step 5/6 の呼び出しを実機名に合わせる（R-R19）|
 | `lib/runway-cost.ts` 不在 / 価格表が空 | `LIB_RUNWAY_COST_NOT_FOUND` で停止（R-R2）|
 | reference 画像 > 16MB | `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止、リサイズ or 公開 URL を案内（R-R3）|
 | ElevenLabs MCP 未接続（auto モード）| 起動時停止 |
