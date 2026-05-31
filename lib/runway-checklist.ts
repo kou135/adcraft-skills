@@ -15,8 +15,8 @@ export const RUNWAY_IMAGE_CHECKLIST = {
     "構図が motion_prompt と矛盾しない（後の image_to_video で動きが破綻しない）",
   text_legibility:
     "焼き込みテキストがある場合、読める / 誤字なし",
-  no_moderation_block:
-    "コンテンツモデレーションで弾かれていない（task が FAILED / moderation 由来でない）",
+  no_degraded_output:
+    "意図した被写体が生成されている（プレースホルダ / 真っ黒 / 極端な破綻でない）。task FAILED 自体は PNG が無いので Step 5 の error 分岐で別処理",
   no_anatomical_break:
     "手足・指・顔の破綻がない（人物カットのみ。商品単体カットは N/A）",
   brand_safety:

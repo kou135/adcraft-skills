@@ -15,6 +15,12 @@
 /** 1 credit あたりの USD 単価（Developer API）。 */
 export const CREDIT_USD = 0.01;
 
+/**
+ * この価格表を docs.dev.runwayml.com/guides/pricing で最後に検証した日付。
+ * R-R10 の cost-report.json `notes` に埋め込み、どの価格スナップショットで推定したかを監査可能にする。
+ */
+export const PRICING_TABLE_VERIFIED = "2026-05-31";
+
 /** 数値（固定）または解像度/オプション別のクレジット数。 */
 type Tiered = number | Record<string, number>;
 
@@ -45,13 +51,16 @@ export const RUNWAY_VIDEO_CREDITS_PER_SEC: Record<string, Tiered> = {
 export const RUNWAY_IMAGE_CREDITS_PER_IMAGE: Record<string, Tiered> = {
   gen4_image: { "720p": 5, "1080p": 8 },
   gen4_image_turbo: 2,
-  gpt_image_2: 20, // 1〜41 cr と幅が広い。cost guard 安全側の conservative 既定値
+  // gpt_image_2 は 1〜41 cr と品質/解像度で大きく変動し、resolution を pin しない呼び方では
+  // "auto" が 4K 相当で課金されうる。cost guard は過小見積で上限を踏み抜くより premature abort の方が
+  // 安全なので、worst case = 41 cr を既定とする（FALLBACK_IMAGE_CREDITS=41 と一貫）。
+  gpt_image_2: 41,
   gemini_image3_pro: { "1k": 20, "2k": 20, "4k": 40 },
   "gemini_2.5_flash": 5,
 };
 
-// 未知モデルへの fallback（cost guard を安全側に倒すため高めに設定）
-const FALLBACK_VIDEO_CREDITS_PER_SEC = 40;
+// 未知モデルへの fallback（cost guard を安全側に倒すため、既知最大 40(veo3) より上に設定）
+const FALLBACK_VIDEO_CREDITS_PER_SEC = 50;
 const FALLBACK_IMAGE_CREDITS = 41;
 
 /**
@@ -121,10 +130,43 @@ export function isValidRatio(ratio: string): boolean {
 }
 
 /**
- * duration を許容 enum の最も近い値に丸める（R-R19）。
- * gen4_turbo / gen4.5 / gen3a_turbo は [5, 10]。丸めが発生したら呼び出し側で
+ * モデル別の許容 duration enum（R-R19.5、固定 enum を持つモデルのみ列挙）。
+ * ここに**無い**モデル（seedance2 は 4〜15s の柔軟な範囲、happyhorse_1_0 は 3〜15s 等）は
+ * 丸めず pass-through する。enum を持たないモデルに [5,10] を強制すると有効な値を
+ * 誤って丸めてしまう（旧実装のバグ）。
+ */
+export const RUNWAY_VIDEO_DURATION_ENUM: Record<string, number[]> = {
+  gen4_turbo: [5, 10],
+  "gen4.5": [5, 10],
+  gen3a_turbo: [5, 10],
+};
+
+/** model の固定 duration enum を返す。柔軟（丸め不要）なモデルは null。 */
+export function allowedDurationsFor(model: string): number[] | null {
+  return RUNWAY_VIDEO_DURATION_ENUM[model] ?? null;
+}
+
+/**
+ * duration を許容 enum の最も近い値に丸める（R-R19）。固定 enum を持つモデルにのみ使う
+ * （`allowedDurationsFor(model)` が null のモデルには適用しない）。丸めが発生したら呼び出し側で
  * issues.json に `duration_rounded` を記録すること。
  */
 export function roundDuration(sec: number, allowed: number[] = [5, 10]): number {
+  if (!Array.isArray(allowed) || allowed.length === 0) {
+    throw new Error("roundDuration: allowed は非空配列でなければならない");
+  }
+  if (!Number.isFinite(sec)) {
+    throw new Error(`roundDuration: sec は有限数でなければならない (got ${sec})`);
+  }
   return allowed.reduce((a, b) => (Math.abs(b - sec) < Math.abs(a - sec) ? b : a));
+}
+
+/**
+ * 生バイト数を base64 data URI 化したときに Runway の referenceImages 16MB 制約に収まるか
+ * （R-R3 / R-R19.6）。base64 は約 4/3 に膨張するため、生ファイルの 16MB チェックだけでは不十分
+ * （例：13MB の生ファイル → ~17.3MB の data URI で超過）。reference を base64 で渡す前にこれで判定する。
+ */
+export function fitsBase64Limit(rawBytes: number, limitBytes: number = 16 * 1024 * 1024): boolean {
+  const encodedBytes = Math.ceil(rawBytes / 3) * 4; // base64 膨張（data: prefix 分は誤差範囲）
+  return encodedBytes <= limitBytes;
 }
