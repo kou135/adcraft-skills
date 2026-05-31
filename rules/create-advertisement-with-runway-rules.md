@@ -110,8 +110,9 @@ OAuth 認証、の手順を案内する（clone / API キー不要）。
 - **0 カット abort 時（生成済が 1 枚も無い）は Remotion 合成を試みず、`items` 空の manifest と cost-report を書いて clean に終了**（base R-H6 継承）。
 - 推定は best-known テーブル値で、**hosted（web-app）の実消費とずれうる**。cost guard が踏み抜かないよう画像は worst case
   （gpt_image_2 = 41 cr）で見積もる。**seedance2 / gpt_image_2 の web-app クレジット消費は接続テストで実測校正**（R-R2 / R-R19.1）。
-- ⚠️ seedance2 は高消費（Dev API 36 cr/s 相当）。preference に `gen4_turbo`（5 cr/s）を fallback として置き安全弁にする。
-  コスト優先の初回は native（gen4_turbo / gen4_image）を 1st にするのも可。
+- ⚠️ **既定の動画 1st は `kling3.0_pro`**（Runway 自社 Gen-4.5 超の品質 + seedance2(36cr/s) の約 1/3 = 12cr/s 無音）。
+  `gen4_turbo`（5cr/s）を fallback に置き安全弁にする。最安重視は `kling3.0_std`(9cr/s)。
+  **seedance2 は Standard だと 4 カットで月次枠（625cr）超過**のため既定から外す（比較用 opt-in）。Kling/Veo の実 model ID は接続時 /mcp で確認。
 
 ### R-R7. 直列実行
 

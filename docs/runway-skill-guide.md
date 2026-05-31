@@ -155,21 +155,21 @@ lite モードは TTS の shot 尺超過問題を物理的に回避し、CapCut 
 if (spent + reserved + next_call > limit × safety_margin) → abort
 ```
 
-### 1 リールの典型コスト（4 shot, 5s/shot）
+### 1 リールの典型クレジット消費（4 shot × 5s, 720p, 無音, Standard 625cr/月）
 
-video は 720p（36cr/s）で算出。image は cost guard が踏み抜かないよう **worst case で計上**する（gpt_image_2 は 1〜41cr と幅があるため見積は 41cr=$0.41/枚、4枚で ~$1.64）。**実課金はこれ以下になることが多い**が、guard は推定値で判定するので余裕を見ておく。
+video は no-audio レート、image は gpt_image_2（中品質 5cr 想定。worst case 41cr も併記）。**真の上限は月次サブスク枠**。
 
-| 構成 | image（guard 見積, worst case）| video（720p）| 合計/reel 見積 |
+| 構成（動画モデル）| 1本のクレジット | **Standard 月産** | 品質 |
 |---|---|---|---|
-| seedance2 + gpt_image_2（本 Skill 既定）| ~$1.6 | $7.20 | **~$8.8**（$9.50 abort 閾値に近い）|
-| gen4_image + gen4_turbo（native, 安価）| $0.20 | $1.00 | **~$1.2** |
-| 静止画 fallback のみ | $0.20 | $0 | **~$0.2** |
+| **Kling 3.0 Pro + gpt_image_2（本 Skill 既定）**| (5 + 60)×4 = **260cr** | **~2.4 本/月** | Gen-4.5 超 |
+| Kling 3.0 Std + gpt_image_2（最安で高品質）| (5 + 45)×4 = 200cr | ~3.1 本/月 | Gen-4.5 超 |
+| HappyHorse 1.0 + gpt_image_2（無音アリーナ最上位）| (5 + 75)×4 = 320cr | ~1.95 本/月 | 最上位 |
+| gen4_turbo + gen4_image（最安・native）| (5 + 25)×4 = 120cr | ~5.2 本/月 | 一段下 |
+| (比較) seedance2 + gpt_image_2 | (5 + 180)×4 = 740cr | **<1 本/月（枠超過）** | 音声アリーナ最上位 |
 
-> ⚠️ **既定（seedance2 + gpt_image_2）は ~$8.8 と $9.50 abort 閾値に近い**。画像 1 枚でも worst case を引くと
-> 余裕が薄く、リトライや 1080p で premature abort（最後のカットが落ちる）リスクがある。
-> **初回・コスト優先なら `image`/`video` の `model_preference` 1st を native（`gen4_image` / `gen4_turbo`、~$1.2/reel）に入れ替える**こと。
-> seedance2 主軸は Higgsfield Plus（seedance fast ≒$0.66/clip）より割高でもある。
-> 表の数値は価格表ベースの **client 側推定値**（実課金は Runway billing で確認）。
+> ⚠️ **seedance2 は Standard では 4 カットで月次枠（625cr）を超過**するため既定から外し、**Kling 3.0 を既定**にした
+> （Runway 自社 Gen-4.5 超の品質 + seedance2 の 1/3 のコスト）。コスト最優先は `kling3.0_std`、最安は `gen4_turbo`。
+> 数値は価格表ベースの **client 側推定**。Kling/Veo の実 model ID と web-app 実消費は接続テストで確認・校正する。
 
 ## エラーハンドリング
 

@@ -125,7 +125,7 @@ Skill C と同型のパイプラインで、生成バックエンドを **Runway
 - **使用頻度**：中（Runway アカウントで実写級を作る時）
 - **接続**：**hosted MCP**（[`https://mcp.runwayml.com/mcp`](https://runwayml.com/mcp)、OAuth、clone/キー不要。Higgsfield と同型。初回 OAuth 1 回後は headless 可）
 - **課金**：**Runway の Web サブスク・クレジット枠**（Standard $15/月=625cr 等）。月次枠が実質ハードキャップなので暴走課金しにくい。hosted は per-call コストを返さないため消費は client 側でクレジット推定
-- **コスト**：消費の大きい seedance2 + gpt_image_2 を 1st にすると月次枠を早く食う。native（gen4_turbo + gen4_image）なら大幅に軽い。web-app の実消費は接続テストで校正
+- **動画モデル既定**：**Kling 3.0 Pro**（Runway 自社 Gen-4.5 超の品質 + seedance2 の約 1/3 コスト。Standard で月2-3本）。最安は gen4_turbo、最安で高品質は kling3.0_std。seedance2 は Standard だと月1本未満になるため既定外。実 model ID と消費は接続テストで校正
 - **得意分野**：Runway native モデルの品質、seedance2/gpt_image_2 を Runway 経由で利用（Higgsfield 版とモデルファミリーを揃えた比較。backend/価格/呼出経路は異なる）
 - **必須前提**：
   - Runway の Web サブスク（Standard 以上で全モデル + watermark 除去）+ hosted MCP 接続（OAuth）
