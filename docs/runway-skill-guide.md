@@ -25,56 +25,51 @@ Skill C と Skill D は **同じ products/`<name>`/ 資産（core.md / voice-spe
 
 ### 1. Runway への接続方法は 3 経路ある
 
-本 Skill は **(B) ローカル stdio MCP** を前提に設計している（headless/cron が動くため）。
+本 Skill は **(A) hosted MCP** を前提に設計している（clone 不要・Higgsfield と同型。初回 OAuth を 1 回済ませれば headless/cron も可）。
 
 | | 経路 | 種別 | 認証 | 課金 | headless/cron |
 |---|---|---|---|---|---|
-| **A** | Hosted MCP `https://mcp.runwayml.com/mcp` | リモート HTTP (Streamable) | OAuth（Runway アカウント、キー不要）| Web サブスクの credit | ❌ OAuth 対話必須 |
-| **B** | **Local stdio MCP** `github.com/runwayml/runway-api-mcp-server` | stdio（clone+build）| `RUNWAYML_API_SECRET` | Dev API credit | ✅（本 Skill が前提）|
-| **C** | 公式 skills plugin `github.com/runwayml/skills` | Claude Code skills（Dev API 直）| `RUNWAYML_API_SECRET` | Dev API credit | ✅ |
+| **A** | **Hosted MCP** `https://mcp.runwayml.com/mcp` | リモート HTTP (Streamable) | OAuth（Runway アカウント、キー不要）| **Web サブスクの credit** | ✅（初回 OAuth 1 回後はトークン再利用、本 Skill が前提）|
+| B | Local stdio MCP `github.com/runwayml/runway-api-mcp-server` | stdio（clone+build）| `RUNWAYML_API_SECRET` | Dev API credit（$0.01/cr 従量）| ✅（key ベース。純 CI 向け）|
+| C | 公式 skills plugin `github.com/runwayml/skills` | Claude Code skills（Dev API 直）| `RUNWAYML_API_SECRET` | Dev API credit | ✅ |
 
-### 2. MCP サーバ接続（経路 B）
+### 2. MCP サーバ接続（経路 A）
 
 ```bash
-# 1. Developer API キーを発行（dev.runwayml.com で組織作成 → API Keys タブ → 発行）
-#    ※ キーは発行時 1 回だけ表示。最低 $10（1,000 credits, $0.01/credit）チャージが必要。
-export RUNWAYML_API_SECRET="key_xxxxx"
+# 1. Runway hosted MCP を追加（clone / API キー不要）
+claude mcp add --transport http runway https://mcp.runwayml.com/mcp
 
-# 2. 公式 MCP サーバを clone + build
-git clone https://github.com/runwayml/runway-api-mcp-server
-cd runway-api-mcp-server
-npm install && npm run build          # → build/index.js
+# 2. Claude Code 内で OAuth 認証（初回 1 回だけ。以後はトークン再利用で headless 可）
+#    /mcp を実行 → runway を選んでブラウザでサインイン
+#    → 課金は Runway の Web サブスク・クレジット枠から引かれる
 
-# 3. Claude Code に追加（MCP_TOOL_TIMEOUT は動画ジョブが長いため大きめに）
-claude mcp add runway \
-  -e RUNWAYML_API_SECRET=$RUNWAYML_API_SECRET \
-  -e MCP_TOOL_TIMEOUT=1000000 \
-  -- node /abs/path/to/runway-api-mcp-server/build/index.js
-
-# 4. ElevenLabs MCP（auto モード時のみ必須）
+# 3. ElevenLabs MCP（auto モード時のみ必須）
 echo 'export ELEVENLABS_API_KEY="sk_xxxxx"' >> ~/.zshenv && source ~/.zshenv
 claude mcp add elevenlabs --type stdio --command "uvx elevenlabs-mcp" \
   --env ELEVENLABS_API_KEY=$ELEVENLABS_API_KEY
 
-# 5. 接続確認
+# 4. 接続確認
 claude mcp list
-# runway: ... ✓ Connected
+# runway: https://mcp.runwayml.com/mcp (HTTP) - ✓ Connected
 # elevenlabs: ... ✓ Connected
 ```
 
-公開 tool：`runway_generateImage` / `runway_generateVideo` / `runway_getTask` / `runway_cancelTask` / `runway_upscaleVideo` / `runway_editVideo` / `runway_getOrg`。**`list_models()` / balance tool は無い**。
+> hosted MCP が公開する tool 名は接続時に `/mcp` で確認できる。SKILL.md 中の `runway_generateImage` 等は
+> 期待マッピングで、実 tool 名が異なれば実機名に合わせる。per-call コスト/残高は返らない前提（消費は client 側でクレジット推定）。
 
-### 3. 課金体系 — Higgsfield と思想が逆（重要）
+### 3. 課金体系 — Higgsfield と同型（A 採用時）
 
-| | Higgsfield（Skill C）| Runway Developer API（Skill D, 経路 B）|
-|---|---|---|
-| 課金の決まり方 | **サブスクのプランがモデルアクセスを決める** | **プランは無関係**。Dev Portal にチャージした credit から従量課金 |
-| クレジット付与 | サブスクに月次同梱（Starter 200 / Plus 1,000 / Ultra 3,000）| **同梱なし**。$0.01/credit を都度購入（最低 $10、無料トライアル無し）|
-| モデルゲーティング | プランで制限（例：seedance は Plus 以上）| **無し**。全モデルが全 usage tier で呼べる |
-| usage tier | — | 同時実行数 / 日次生成数 / 30日支出上限のみ制御（Tier1 同時1・50gen/日・$100 → Tier5 $100k）|
+経路 A は Higgsfield と同じく **hosted MCP + サブスク課金**。Dev API（経路 B）とは別物なので混同しないこと。
 
-> Web サブスク（Standard $15/月, 625cr 等）と Developer API は **完全別財布**。Web プランを買っても
-> API クレジットは付かない。本 Skill（経路 B = Dev API）では Web プランは不要。
+| | Higgsfield（Skill C）| Runway 経路 A（Skill D, 本採用）| 参考: Runway 経路 B（Dev API）|
+|---|---|---|---|
+| 課金 | サブスクの月次クレジット枠 | **Runway Web サブスクの月次クレジット枠**（Standard 625/月 等）| Dev Portal の従量 credit（$0.01/cr）|
+| クレジット付与 | 月次同梱（Starter 200 / Plus 1,000 / Ultra 3,000）| **月次同梱**（プランの枠）| 同梱なし（都度購入、最低 $10）|
+| モデル可否 | プランで制限 | **Standard 以上で全モデル解放 + watermark 除去**（seedance2/gpt_image_2 含む）| 全モデル（tier は同時実行/支出上限のみ）|
+| ハードキャップ | 月次枠 | **月次枠**（超過は物理的に止まる＝暴走課金しにくい）| 30日支出上限 / autobilling |
+
+> 経路 A は **Runway の Web サブスク（Standard $15/月〜）が必要**。Web プランの月次クレジット枠から消費される。
+> ⚠️ web-app のモデル別クレジット消費（特に seedance2 / gpt_image_2）は Dev API 値とずれうるため、接続テストで実測校正する。
 
 ### 4. プロダクト側準備
 
@@ -122,7 +117,7 @@ ratio は 720:1280。生成物は SUCCEEDED 直後に必ずダウンロード。
     >> logs/$(date +%Y%m%d-%H%M%S).log 2>&1
 ```
 
-R-R11 により `承認不要` / `自律実行` 等のキーワードで確認をスキップ。経路 B（stdio + API キー）なので headless で動く。
+R-R11 により `承認不要` / `自律実行` 等のキーワードで確認をスキップ。経路 A は初回ブラウザ OAuth を 1 回済ませておけば、以後はトークン再利用で headless（cron）も動く（Higgsfield と同様。cron 前に一度 `/mcp` 認証を）。
 
 ## lite モード vs auto モード
 
@@ -135,7 +130,7 @@ R-R11 により `承認不要` / `自律実行` 等のキーワードで確認�
 
 lite モードは TTS の shot 尺超過問題を物理的に回避し、CapCut 等での手動付与前提でプロダクション品質に到達しやすい。auto モードは完成 MP4 のみで配信可能。混合（`tts.enabled:false, bgm.required:true` 等）も可。
 
-## 利用可能モデルと価格（Developer API、$0.01/credit、2026-05 検証値）
+## 利用可能モデルと推定クレジット（Dev API pricing 由来、2026-05。hosted/web-app 実消費は接続時校正）
 
 | 種別 | model ID | 価格 | 備考 |
 |---|---|---|---|

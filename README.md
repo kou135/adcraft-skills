@@ -36,8 +36,8 @@ npx skills add remotion-dev/skills
 ## クイックスタート（30 分）
 
 > このクイックスタートは **Skill B（無料・MCP 不要）** の最短経路です。**Skill C / D（実写級・MCP 利用）** を使う場合は、
-> 先に [MCP セットアップ](#mcp-セットアップskill-c--d-利用時) を済ませてください。とくに **Skill D（Runway）** は API 組織作成 +
-> $10 チャージ + MCP の clone/build が必要で、別途 **15〜20 分** ほどかかります（詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md) の「事前準備」）。
+> 先に [MCP セットアップ](#mcp-セットアップskill-c--d-利用時) を済ませてください。**Skill D（Runway）** は hosted MCP（clone/キー不要）で、
+> Runway の Web サブスク + `claude mcp add --transport http` → `/mcp` で OAuth するだけ（数分。詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)）。
 
 ### 1. クローン & 依存解決（2 分）
 
@@ -122,13 +122,13 @@ Skill B の上位互換。**Higgsfield MCP（GPT Image 2 + Seedance 2.0 等）�
 
 Skill C と同型のパイプラインで、生成バックエンドを **Runway MCP（`gpt_image_2` / `gen4_image` + `seedance2` / `gen4_turbo` 等）と ElevenLabs MCP（TTS）** に差し替えたもの。lite / auto モード・コンテンツカテゴリ・voice-spec・symlink-safe レンダリングを Skill C から継承する。
 
-- **使用頻度**：中（Runway アカウント / Developer API で実写級を作る時）
-- **接続**：**ローカル stdio MCP**（[`runwayml/runway-api-mcp-server`](https://github.com/runwayml/runway-api-mcp-server)、`RUNWAYML_API_SECRET`、headless/cron 対応）
-- **課金**：Web サブスクではなく **Developer API のクレジット制**（$0.01/credit, 従量・プラン無関係）。balance tool が無いためコストは client 側で算出
-- **コスト**：seedance2 + gpt_image_2 で ~$8/リール、gen4_turbo + gen4_image（native）なら ~$1.2/リール
+- **使用頻度**：中（Runway アカウントで実写級を作る時）
+- **接続**：**hosted MCP**（[`https://mcp.runwayml.com/mcp`](https://runwayml.com/mcp)、OAuth、clone/キー不要。Higgsfield と同型。初回 OAuth 1 回後は headless 可）
+- **課金**：**Runway の Web サブスク・クレジット枠**（Standard $15/月=625cr 等）。月次枠が実質ハードキャップなので暴走課金しにくい。hosted は per-call コストを返さないため消費は client 側でクレジット推定
+- **コスト**：消費の大きい seedance2 + gpt_image_2 を 1st にすると月次枠を早く食う。native（gen4_turbo + gen4_image）なら大幅に軽い。web-app の実消費は接続テストで校正
 - **得意分野**：Runway native モデルの品質、seedance2/gpt_image_2 を Runway 経由で利用（Higgsfield 版とモデルファミリーを揃えた比較。backend/価格/呼出経路は異なる）
 - **必須前提**：
-  - Runway Developer API キー（dev.runwayml.com、最低 $10 チャージ）+ Runway MCP（ローカル stdio）接続
+  - Runway の Web サブスク（Standard 以上で全モデル + watermark 除去）+ hosted MCP 接続（OAuth）
   - ElevenLabs（auto モード時のみ）+ ElevenLabs MCP 接続
   - `products/<name>/assets/voice-spec/{category}.md` + `assets/reference/index.md` の整備
 - **Runway 固有の注意**：ratio は pixel 文字列 `"720:1280"`、model ID literal（`gen4.5` / `gen4_image`）、生成物 URL は 24h 失効（即DL）
@@ -315,20 +315,18 @@ claude mcp add higgsfield --type http --url https://mcp.higgsfield.ai/mcp
 
 ### Runway MCP（Skill D）
 
-ローカル stdio MCP（headless/cron 対応）を前提とする。詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)。
+**hosted MCP**（clone/キー不要、Higgsfield と同型）を前提とする。詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)。
 
 ```bash
-# 1. dev.runwayml.com で組織作成 → API キー発行（最低 $10 チャージ要）
-export RUNWAYML_API_SECRET="key_xxxxx"
-# 2. 公式 MCP サーバを clone + build
-git clone https://github.com/runwayml/runway-api-mcp-server
-cd runway-api-mcp-server && npm install && npm run build
-# 3. Claude Code に追加
-claude mcp add runway -e RUNWAYML_API_SECRET=$RUNWAYML_API_SECRET -e MCP_TOOL_TIMEOUT=1000000 \
-  -- node /abs/path/to/runway-api-mcp-server/build/index.js
+# 1. hosted MCP を追加（clone / API キー不要）
+claude mcp add --transport http runway https://mcp.runwayml.com/mcp
+# 2. Claude Code 内で OAuth（初回 1 回。以後トークン再利用で headless 可）
+#    /mcp を実行 → runway を選んでブラウザでサインイン
+# 3. 接続確認
+claude mcp list   # runway: https://mcp.runwayml.com/mcp (HTTP) - ✓ Connected
 ```
 
-**課金**：Web サブスクではなく **Developer API のクレジット制**（$0.01/credit, 従量・プラン無関係）。Web プランを買っても API クレジットは付かない。
+**課金**：**Runway の Web サブスク・クレジット枠**から消費（Higgsfield と同型）。Standard 以上で全モデル + watermark 除去。事前に Runway の Web プラン（Standard $15/月〜）が必要。
 
 ### ElevenLabs MCP（Skill C / D 共通、auto モード時）
 

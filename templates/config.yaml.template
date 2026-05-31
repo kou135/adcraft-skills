@@ -90,15 +90,18 @@ higgsfield:
 
 # create-advertisement-with-runway skill 用設定 (Skill D)
 # 使わない場合は runway.enabled: false（既存 create-advertisement / higgsfield のみ動く）
-# Runway は Web サブスクではなく Developer API のクレジット制（$0.01/credit, 従量・プラン無関係）。
+# 接続は hosted MCP（https://mcp.runwayml.com/mcp, OAuth）。clone / API キー不要。
+# 課金は Runway の Web サブスク・クレジット枠（Higgsfield と同型）。真のハードキャップ = 月次クレジット枠（Standard 625/月 等）。
 #
-# ⚠️ コスト注意：下記 default は seedance2 + gpt_image_2 を 1st にしており ~$8/reel（$9.50 abort 閾値に近い）。
-#    初回・コスト優先なら image/video の model_preference 1st を gen4_image / gen4_turbo（native, ~$1.2/reel）
-#    に入れ替えてから enabled: true にすることを推奨。seedance2 は Higgsfield 版との比較用 opt-in と捉える。
+# ⚠️ コスト注意：default は seedance2 + gpt_image_2 を 1st。消費が大きく月次枠を早く食う。
+#    初回・コスト優先なら image/video の model_preference 1st を gen4_image / gen4_turbo（native）に入れ替えて
+#    から enabled: true にするのを推奨。seedance2 は Higgsfield 版との比較用 opt-in と捉える。
+#    ※ web-app のモデル別クレジット消費（特に seedance2/gpt_image_2）は接続テストで実測校正すること。
 runway:
   enabled: false              # true にすると Skill D が起動可能になる
-  cost_limit_usd: 10.00       # 1run あたりのハードコスト上限（USD）。balance tool 無し→client側推定で遵守
-  cost_safety_margin: 0.95    # 実停止しきい値（limit_usd * safety_margin で abort）
+  credit_limit_per_run: 200   # 1run の推定消費クレジット上限（hosted の主単位）。月次枠を1runで食い潰さない安全弁
+  cost_limit_usd: 10.00       # USD 概算 proxy（cost_tracker 連携用）。credit_limit と先に到達した方で abort
+  cost_safety_margin: 0.95    # 実停止しきい値（limit * safety_margin で abort）
   shots_per_video: 4          # 1動画あたりカット数
   shot_duration_sec: 5        # gen4_turbo/gen4.5 の duration enum は [5,10]。
                               # ⚠️ shots_per_video × shot_duration_sec を formats.reel.duration に一致させる

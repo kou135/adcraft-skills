@@ -94,12 +94,13 @@ still で検証する代表フレーム。
 
 ## `runway:` ブロック（Skill D 専用、任意）
 
-`create-advertisement-with-runway`（Skill D）が読む。`enabled: false`（既定）なら無視される。Runway は Web サブスクではなく Developer API のクレジット制（$0.01/credit、従量・プラン無関係）。
+`create-advertisement-with-runway`（Skill D）が読む。`enabled: false`（既定）なら無視される。接続は hosted MCP（`https://mcp.runwayml.com/mcp`、OAuth、clone/キー不要）。課金は **Runway の Web サブスク・クレジット枠**（Higgsfield と同型。真のハードキャップ = 月次枠）。
 
 ```yaml
 runway:
   enabled: boolean              # 既定 false。true で Skill D が起動可能に
-  cost_limit_usd: number        # 1 run のハード上限（USD、既定 10.00）。balance tool 非対応のため client 側推定で遵守
+  credit_limit_per_run: number  # 1 run の推定消費クレジット上限（既定 200、hosted の主単位）
+  cost_limit_usd: number        # USD 概算 proxy（既定 10.00、cost_tracker 連携）。credit と先に到達した方で abort
   cost_safety_margin: number    # 既定 0.95（limit × margin で abort）
   shots_per_video: integer      # 1 動画のカット数（既定 4）
   shot_duration_sec: integer    # 1 カット秒数（既定 5）。shots_per_video × shot_duration_sec = formats.reel.duration
