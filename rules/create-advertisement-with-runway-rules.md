@@ -99,10 +99,16 @@ stdout に出し、`claude mcp add runway -e RUNWAYML_API_SECRET=… -- node …
   if (spent_usd + reserved_usd + next_call_cost > limit_usd * safety_margin) → abort
   ```
 
-- `safety_margin` のデフォルトは `0.95`。abort 時は `issues.json` に `cost_limit_reached` を記録し、
-  **生成済カットだけで最終 Remotion 合成を試行**する。headless 時もユーザー確認なしで即 abort。
-- ⚠️ seedance2 は 36 cr/s（5s≒$1.80）と高い。4 カットで動画だけ ≒$7.2 になり $10 上限に近い。
-  preference に `gen4_turbo`（5 cr/s, 5s=$0.25）を fallback として置き、cost guard 到達時の安全弁にする。
+- `safety_margin` のデフォルトは `0.95`。abort 時は `tracker.aborted = true` を立て（cost-report の
+  `aborted_by_cost` を正しく真にするため、R-R10）、`issues.json` に `cost_limit_reached`（at_step / at_shot /
+  predicted_cost）を記録し、**生成済カットだけで最終 Remotion 合成を試行**する。headless 時もユーザー確認なしで即 abort。
+- **0 カット abort 時（生成済が 1 枚も無い）は Remotion 合成を試みず、`items` 空の manifest と cost-report を
+  書いて clean に終了する**（no-shot render を回避。base R-H6 継承）。
+- 見積はテーブル価格に基づく **client 側推定値**で実課金と一致しない場合がある。cost guard が踏み抜かない
+  よう、画像モデルは worst case（gpt_image_2 = 41 cr）で見積もる（`lib/runway-cost.ts`）。
+- ⚠️ seedance2 は 36 cr/s（720p、5s≒$1.80）と高い。4 カットで動画だけ ≒$7.2、画像込みで $8 前後となり
+  $9.50（= limit × safety_margin）に近い。preference に `gen4_turbo`（5 cr/s, 5s=$0.25）を fallback として置き、
+  cost guard 到達時の安全弁にする。コスト優先の初回は native（gen4_turbo / gen4_image）を 1st にするのも可。
 
 ### R-R7. 直列実行
 
@@ -158,8 +164,12 @@ stdout に出し、`claude mcp add runway -e RUNWAYML_API_SECRET=… -- node …
 
 ### R-R14. コンテンツカテゴリ & voice-spec の読み込み必須
 
-- 各 variation の `variation_note` は **先頭に `[category]` タグ**を持つ（例：`[worldview] Runway 版 …`）。
-  タグ無しは `MISSING_CATEGORY_TAG` で fail-fast。
+- 各 variation の `variation_note` は **先頭に `[category/viewpoint]` の 2 階層タグ**を持つ（例：`[worldview/observed] Runway 版 …`）。
+  - `category` 無しは `MISSING_CATEGORY_TAG` で fail-fast。
+  - `viewpoint` は core.md の該当カテゴリ「視点パレット」の値のみ許可。省略時はパレット 1st を default 採用
+    （`viewpoint_defaulted` を info 記録）、パレット外は `INVALID_VIEWPOINT_TAG:{category}:{viewpoint}` で停止。
+  - viewpoint は過去 reel の直近 N-1 件と重複させない（Step 3 の履歴チェック）。manifest の `items[].viewpoint`
+    （旧 manifest は `variation_note` の 2 階層目から抽出）が履歴の参照源。
 - 起動時に以下を順に確認、1 つでも失敗したら停止：
   1. `products/<name>/core.md` 内 `## コンテンツカテゴリ` に該当 `[category]` が定義
   2. `products/<name>/assets/voice-spec/{category}.md` が存在
@@ -204,10 +214,12 @@ Step 7 と Step 8 の間に **Step 7.5 ポストマスター**を必ず実行：
 
 ### R-R17. voice-spec & reference は autonomous run 中 read-only
 
-- autonomous run 中は `assets/voice-spec/*.md` / `_index.md` / `assets/reference/*` / `reference/index.md` を
-  一切変更しない。
-- 違反検知：起動前にこれらの mtime を記録、終了前に再チェック。変更されていれば
-  `READ_ONLY_VIOLATION:{path}` を issues.json に記録（停止はしない）。
+- autonomous run 中、いかなる Step も `assets/voice-spec/*.md` / `_index.md` / `assets/reference/*` /
+  `reference/index.md` に対し **Write / Edit を行ってはならない**（curate された入力であり、1 本の reel 都合で
+  書き換えない）。これらの更新は将来予定の専用 skill（refresh-voice-specs 等）の明示起動で行う。
+- 違反検知：起動前に mtime を記録、終了前に再チェック。変更されていれば `READ_ONLY_VIOLATION:{path}` を
+  issues.json に記録し、**Step 11 終了サマリにも目立つ警告として表示する**（検知のみで停止はしないが、
+  headless でも見落とさないよう顕在化させる）。git で元に戻すことを案内する。
 
 ### R-R18. TTS / BGM 自動化の opt-in 化（lite / auto モード切替）
 
@@ -245,17 +257,24 @@ Runway バックエンド特有の落とし穴。SKILL.md 全 Step でこれら�
 1. **`list_models()` / balance tool が無い**：モデルは config preference から解決（R-R2）、コストは client 側算出（R-R6）。
 2. **生成物 URL は 24h で失効**：task `SUCCEEDED` 後**即ダウンロード**して永続化（R-R9）。URL 直参照禁止。
 3. **ratio は pixel 文字列**：9:16 は `"9:16"` ではなく **`"720:1280"`**（gen4.5 i2v は `832:1104` / `672:1584` も）。
-   landscape は `1280:720` 等。
+   landscape は `1280:720` 等。**⚠️ image_to_video（動画）と text_to_image（画像、gen4_image）で許容 ratio enum が
+   異なる**。`"720:1280"` は動画側で確認済みだが、画像生成側（gen4_image / gpt_image_2）の portrait 文字列は
+   別系統（1024/1080 級）の可能性があるため、**実 run（接続テスト）で image 側 ratio を確認**し、必要なら
+   `runway.image.ratio` を `runway.video.ratio` と分離する。video 用文字列を image エンドポイントに渡すと 400 になりうる。
 4. **model ID literal を厳守**：`gen4.5`（ドット）/ `gen4_turbo` / `gen4_aleph` / `act_two` / `gen3a_turbo` /
    `seedance2` / `gen4_image`（アンダースコア）/ `gen4_image_turbo` / `gpt_image_2`。`gen4_5` `gen_4_5` は誤り。
-5. **duration enum**：`gen4_turbo` / `gen4.5` image_to_video は固定 enum **`[5, 10]`**（可変ではない）。
-   `gen3a_turbo` も `[5, 10]`。`seedance2` は 4〜15s 対応だが、本 skill の `shot_duration_sec`（既定 5）に合わせる。
-   shot_duration が enum に無い値なら最も近い許容値に丸め、`issues.json` に `duration_rounded` を記録。
-6. **reference image**：`referenceImages` 配列に最大 3 枚、`{ uri, tag }`（uri = base64 data URI か URL、≤16MB）+ `@tag` で prompt 参照（R-R3）。
-7. **pre-flight 検証の強制**：3〜5 は API 呼び出し前に `lib/runway-cost.ts` のヘルパで防御的に検証する
+5. **duration enum（モデル別）**：固定 enum は `lib/runway-cost.ts` の `RUNWAY_VIDEO_DURATION_ENUM` で管理
+   （`gen4_turbo` / `gen4.5` / `gen3a_turbo` = `[5, 10]`）。**`seedance2` は 4〜15s の柔軟範囲で固定 enum を持たない**ため
+   `allowedDurationsFor(model)` が `null` を返し、その場合は**丸めない**（[5,10] を誤強制しない）。固定 enum を持つ
+   モデルでのみ `roundDuration` を使い、丸めが発生したときだけ `issues.json` に `duration_rounded` を記録。
+6. **reference image**：`referenceImages` 配列に最大 3 枚、`{ uri, tag }`（uri = base64 data URI か URL）+ `@tag` で prompt 参照（R-R3）。
+   **16MB 制約は base64 エンコード後のペイロードに掛かる**（base64 は ~4/3 に膨張）。`fitsBase64Limit(rawBytes)` で
+   エンコード後サイズ ≤16MB を判定してから渡す（生 16MB チェックだけでは不十分、R-R1.5 / R-R3）。
+7. **pre-flight 検証の強制**：3〜6 は API 呼び出し前に `lib/runway-cost.ts` のヘルパで防御的に検証する
    （headless 実行で失敗を未然に防ぐため）。`isValidRatio(ratio)`（`"9:16"` 等を弾く）/
-   `isKnownVideoModel` `isKnownImageModel`（typo `gen4_5` 等を弾く）/ `roundDuration(sec)`（enum `[5,10]` に丸め）。
-   ratio / model が不正なら fail-fast、duration 丸め発生時は `issues.json` に `duration_rounded` を記録。
+   `isKnownVideoModel` `isKnownImageModel`（typo `gen4_5` 等を弾く）/ `allowedDurationsFor(model)` →
+   非 null なら `roundDuration(sec, enum)`、null（seedance2 等）は丸めない / `fitsBase64Limit(bytes)`。
+   ratio / model が不正なら fail-fast、duration 丸め発生時のみ `issues.json` に `duration_rounded` を記録。
 
 ## 受入基準
 
