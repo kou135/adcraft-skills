@@ -91,20 +91,29 @@ higgsfield:
 # create-advertisement-with-runway skill 用設定 (Skill D)
 # 使わない場合は runway.enabled: false（既存 create-advertisement / higgsfield のみ動く）
 # Runway は Web サブスクではなく Developer API のクレジット制（$0.01/credit, 従量・プラン無関係）。
+#
+# ⚠️ コスト注意：下記 default は seedance2 + gpt_image_2 を 1st にしており ~$8/reel（$9.50 abort 閾値に近い）。
+#    初回・コスト優先なら image/video の model_preference 1st を gen4_image / gen4_turbo（native, ~$1.2/reel）
+#    に入れ替えてから enabled: true にすることを推奨。seedance2 は Higgsfield 版との比較用 opt-in と捉える。
 runway:
   enabled: false              # true にすると Skill D が起動可能になる
   cost_limit_usd: 10.00       # 1run あたりのハードコスト上限（USD）。balance tool 無し→client側推定で遵守
   cost_safety_margin: 0.95    # 実停止しきい値（limit_usd * safety_margin で abort）
   shots_per_video: 4          # 1動画あたりカット数
-  shot_duration_sec: 5        # gen4_turbo/gen4.5 の duration enum は [5,10]。合計 = formats.reel.duration
+  shot_duration_sec: 5        # gen4_turbo/gen4.5 の duration enum は [5,10]。
+                              # ⚠️ shots_per_video × shot_duration_sec を formats.reel.duration に一致させる
+                              #    （既定 4×5=20s。formats.reel.duration が 25s 等なら shot 構成を合わせること）
   parallel: false             # MVP は直列固定
-  ratio: "720:1280"           # 9:16 は pixel 文字列で指定（"9:16" は不可、R-R19）
+  ratio: "720:1280"           # 動画(image_to_video)の 9:16 pixel 文字列（"9:16" は不可、R-R19）。
+                              # ※ 画像生成(gen4_image/gpt_image_2)は ratio enum が別系統の可能性。実 run で確認し、
+                              #    必要なら image.ratio を別途指定（R-R19.3）
   image:
     # model ID literal 厳守（gen4_image はアンダースコア、R-R19）
     model_preference:
-      - "gpt_image_2"         # 1st: OpenAI（Higgsfield 版と同条件比較用）
+      - "gpt_image_2"         # 1st: OpenAI（Higgsfield 版と同条件比較用、見積は worst case 41cr で計上）
       - "gen4_image"          # fallback: Runway native（5cr@720p=$0.05、安価）
     max_iterations_per_shot: 3  # 初回 + リトライ最大2回
+    # ratio: "1080:1920"      # （任意）画像生成専用 ratio。未指定なら上位 ratio を使う
   video:
     # seedance2 は 36cr/s（5s≒$1.80）と高コスト。gen4_turbo（5cr/s=$0.25）を必ず fallback に置く。
     model_preference:

@@ -35,6 +35,10 @@ npx skills add remotion-dev/skills
 
 ## クイックスタート（30 分）
 
+> このクイックスタートは **Skill B（無料・MCP 不要）** の最短経路です。**Skill C / D（実写級・MCP 利用）** を使う場合は、
+> 先に [MCP セットアップ](#mcp-セットアップskill-c--d-利用時) を済ませてください。とくに **Skill D（Runway）** は API 組織作成 +
+> $10 チャージ + MCP の clone/build が必要で、別途 **15〜20 分** ほどかかります（詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md) の「事前準備」）。
+
 ### 1. クローン & 依存解決（2 分）
 
 ```bash
@@ -122,7 +126,7 @@ Skill C と同型のパイプラインで、生成バックエンドを **Runway
 - **接続**：**ローカル stdio MCP**（[`runwayml/runway-api-mcp-server`](https://github.com/runwayml/runway-api-mcp-server)、`RUNWAYML_API_SECRET`、headless/cron 対応）
 - **課金**：Web サブスクではなく **Developer API のクレジット制**（$0.01/credit, 従量・プラン無関係）。balance tool が無いためコストは client 側で算出
 - **コスト**：seedance2 + gpt_image_2 で ~$8/リール、gen4_turbo + gen4_image（native）なら ~$1.2/リール
-- **得意分野**：Runway native モデルの品質、seedance2/gpt_image_2 を Runway 経由で利用（Higgsfield 版との比較）
+- **得意分野**：Runway native モデルの品質、seedance2/gpt_image_2 を Runway 経由で利用（Higgsfield 版とモデルファミリーを揃えた比較。backend/価格/呼出経路は異なる）
 - **必須前提**：
   - Runway Developer API キー（dev.runwayml.com、最低 $10 チャージ）+ Runway MCP（ローカル stdio）接続
   - ElevenLabs（auto モード時のみ）+ ElevenLabs MCP 接続
@@ -217,6 +221,7 @@ adcraft/
 ```bash
 cd /path/to/adcraft && \
   unset ANTHROPIC_API_KEY && \
+  mkdir -p logs && \
   claude -p "create-advertisement skill で全商品の動画を生成して。承認不要、最後まで自律実行して。" \
     --permission-mode bypassPermissions \
     --max-turns 200 \

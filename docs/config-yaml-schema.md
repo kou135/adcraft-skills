@@ -88,6 +88,43 @@ still で検証する代表フレーム。
 
 `manual` は「型」になりやすいので、慣れるまでは `auto` を推奨します。
 
+## `higgsfield:` ブロック（Skill C 専用、任意）
+
+`create-advertisement-with-higgsfield`（Skill C）が読む。各フィールドの意味は [`higgsfield-skill-guide.md`](./higgsfield-skill-guide.md) と [`templates/config.yaml.template`](../templates/config.yaml.template) のコメントを参照。`enabled: false`（既定）なら無視される。
+
+## `runway:` ブロック（Skill D 専用、任意）
+
+`create-advertisement-with-runway`（Skill D）が読む。`enabled: false`（既定）なら無視される。Runway は Web サブスクではなく Developer API のクレジット制（$0.01/credit、従量・プラン無関係）。
+
+```yaml
+runway:
+  enabled: boolean              # 既定 false。true で Skill D が起動可能に
+  cost_limit_usd: number        # 1 run のハード上限（USD、既定 10.00）。balance tool 非対応のため client 側推定で遵守
+  cost_safety_margin: number    # 既定 0.95（limit × margin で abort）
+  shots_per_video: integer      # 1 動画のカット数（既定 4）
+  shot_duration_sec: integer    # 1 カット秒数（既定 5）。shots_per_video × shot_duration_sec = formats.reel.duration
+  parallel: boolean             # 既定 false（MVP は直列）
+  ratio: string                 # 動画の 9:16 pixel 文字列 "720:1280"（"9:16" は不可）
+  image:
+    model_preference: string[]  # 既定 ["gpt_image_2","gen4_image"]。literal 厳守（gen4_image はアンダースコア）
+    max_iterations_per_shot: integer  # 既定 3（初回 + リトライ 2）
+    ratio: string               # 任意。画像生成専用 ratio（未指定なら上位 ratio）。video と enum が異なりうる
+  video:
+    model_preference: string[]  # 既定 ["seedance2","gen4_turbo"]。seedance2 は高コスト、gen4_turbo を fallback に
+    one_shot: boolean           # 既定 true（失敗時は次候補→静止画、同一モデル再生成しない）
+    fallback_to_static: boolean # 既定 true
+  tts:                          # R-R18: opt-in。既定 lite（TTS スキップ、台本のみ）
+    enabled: boolean            # 既定 false。true で ElevenLabs 自動生成（auto モード）
+    provider: string            # "elevenlabs"
+    voice_id: string            # enabled: true 時に必須
+    model_id: string            # 例 "eleven_turbo_v2_5"
+  bgm:
+    required: boolean           # 既定 false。true なら assets/bgm/*.mp3 を全 shot 通敷
+    selection: string           # "auto" | "explicit"
+```
+
+詳細は [`runway-skill-guide.md`](./runway-skill-guide.md) と [`../rules/create-advertisement-with-runway-rules.md`](../rules/create-advertisement-with-runway-rules.md)（R-R1〜R-R19）を参照。
+
 ## 含まれないフィールド（意図的）
 
 - `github_branch`、`pr_template`、`tiktok_account_id` 等の **配信関連設定**

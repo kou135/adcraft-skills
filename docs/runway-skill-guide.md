@@ -14,9 +14,12 @@
 | Higgsfield アカウントで実写級を作りたい | Skill C (`create-advertisement-with-higgsfield`) |
 | **Runway アカウント / Runway Developer API で実写級を作りたい** | **Skill D** |
 | Runway native モデル（gen4_turbo / gen4_image）の品質を使いたい | **Skill D** |
-| seedance2 / gpt_image_2 を Runway 経由で使い、Higgsfield 版と比較したい | **Skill D** |
+| seedance2 / gpt_image_2 を Runway 経由で使い、Higgsfield 版とモデルファミリーを揃えて比較したい | **Skill D** |
 
 Skill C と Skill D は **同じ products/`<name>`/ 資産（core.md / voice-spec / reference）を共有**できる。`config.yaml` の `higgsfield:` / `runway:` ブロックで使い分ける。
+
+> ※ 「Higgsfield 版と比較」は **モデルファミリーを揃えた比較**であり、厳密な同条件ではない（backend / model ID
+> 表記 `gpt-image-2`↔`gpt_image_2`・`seedance_2_0`↔`seedance2` / 価格 / 呼び出し経路が異なる）。出力やコストは一致しない。
 
 ## 事前準備
 
@@ -159,14 +162,19 @@ if (spent + reserved + next_call > limit × safety_margin) → abort
 
 ### 1 リールの典型コスト（4 shot, 5s/shot）
 
-| 構成 | image | video | 合計/reel |
+video は 720p（36cr/s）で算出。image は cost guard が踏み抜かないよう **worst case で計上**する（gpt_image_2 は 1〜41cr と幅があるため見積は 41cr=$0.41/枚、4枚で ~$1.64）。**実課金はこれ以下になることが多い**が、guard は推定値で判定するので余裕を見ておく。
+
+| 構成 | image（guard 見積, worst case）| video（720p）| 合計/reel 見積 |
 |---|---|---|---|
-| seedance2 + gpt_image_2（本 Skill 既定）| ~$0.80 | $7.20 | **~$8.0**（$10 上限にやや近い）|
+| seedance2 + gpt_image_2（本 Skill 既定）| ~$1.6 | $7.20 | **~$8.8**（$9.50 abort 閾値に近い）|
 | gen4_image + gen4_turbo（native, 安価）| $0.20 | $1.00 | **~$1.2** |
 | 静止画 fallback のみ | $0.20 | $0 | **~$0.2** |
 
-> ⚠️ seedance2 主軸は Higgsfield Plus（seedance fast ≒$0.66/clip）より割高。コストを抑えたいときは
-> `video.model_preference` の 1st を `gen4_turbo` にするか、cost guard 到達時の fallback として必ず置く。
+> ⚠️ **既定（seedance2 + gpt_image_2）は ~$8.8 と $9.50 abort 閾値に近い**。画像 1 枚でも worst case を引くと
+> 余裕が薄く、リトライや 1080p で premature abort（最後のカットが落ちる）リスクがある。
+> **初回・コスト優先なら `image`/`video` の `model_preference` 1st を native（`gen4_image` / `gen4_turbo`、~$1.2/reel）に入れ替える**こと。
+> seedance2 主軸は Higgsfield Plus（seedance fast ≒$0.66/clip）より割高でもある。
+> 表の数値は価格表ベースの **client 側推定値**（実課金は Runway billing で確認）。
 
 ## エラーハンドリング
 
