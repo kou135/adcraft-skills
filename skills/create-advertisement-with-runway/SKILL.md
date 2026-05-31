@@ -42,6 +42,7 @@ R-R11（基底 `create-advertisement` の R12「headless 時のユーザー確�
 2. Runway MCP の `runway_getOrg()` を呼ぶ → 200 OK & 組織情報（クレジット残高含む）を確認。失敗なら `MCP_NOT_CONNECTED:runway` で停止し、`claude mcp add runway …` 手順を案内。
 3. `lib/runway-cost.ts` の `isPricingTablePopulated()` を呼ぶ → true を確認。false / import 不能なら `LIB_RUNWAY_COST_NOT_FOUND` で停止（model 解決・コスト算出の前提が壊れているため、R-R2）。
 4. （auto モード時のみ）ElevenLabs MCP の lightweight call → 200 OK 確認。失敗なら停止。
+   - ※ lite / auto は Step 1 の config parse で確定するため、この ElevenLabs 疎通は実務上 Step 1 直後に行ってよい（`tts.enabled: true` のときだけ）。
 
 ### Step 1. 商品設定の読み込みと整合性チェック — R-R11, R-R14
 
@@ -51,7 +52,7 @@ R-R11（基底 `create-advertisement` の R12「headless 時のユーザー確�
 2. `products/<name>/config.yaml` を読む（`yaml` パッケージで parse）
    - `runway.enabled: true` でない場合は「`config.yaml.runway.enabled` を true にしてください」で停止
 3. `products/<name>/assets/reference/*.{png,jpg,jpeg,webp}` が 1 枚以上 → なければ `REFERENCE_IMAGE_MISSING` で停止
-   - **各 reference 画像が ≤16MB**（Runway base64 data URI 制約、R-R3）→ 超過は `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止し、リサイズ or 公開 URL での `uri` 指定を案内
+   - **各 reference 画像が base64 化後 ≤16MB**（Runway referenceImages 制約。base64 は ~4/3 膨張するので生サイズでなく `fitsBase64Limit(fileBytes)` で判定、R-R3 / R-R19.6）→ 超過は `REFERENCE_IMAGE_TOO_LARGE:{filename}` で停止し、リサイズ（生 ~11.5MB 未満が目安）or 公開 URL での `uri` 指定を案内
 4. **`products/<name>/assets/reference/index.md` が存在** → なければ `REFERENCE_INDEX_MISSING` で停止（R-R14）
 5. **`assets/voice-spec/_index.md` と各 `{category}.md` が揃っている** → 欠落あれば `VOICE_SPEC_MISSING:{category}` で停止（R-R14）
 6. **各 `{category}.md` に必須 6 セクション**（`Voice Persona` / `Tone Keywords` / `Pace Target` / `Prosody Patterns` / `Taboos` / `Recommended ElevenLabs Voices`）→ 欠落あれば `VOICE_SPEC_INCOMPLETE:{category}:{missing}` で停止
@@ -110,17 +111,18 @@ Runway は upload→URL 方式ではなく `referenceImages` 配列に直接渡�
 
 ### Step 5. 画像生成ループ（カット単位、直列） — R-R4, R-R6, R-R8, R-R9
 
-各カット index 0..3 について：
+各カット index 0..3 について。**cost guard → reserve → 呼び出し → commit(課金発生時) / cancel(無課金失敗時) を「1 試行ごと」に完結**させる（リトライも各回が独立した paid call。reserve と commit/cancel は試行ごとに 1 対 1。reserve せずに commit すると `_pending=null` で throw するため厳守。F5 / R-R6）：
 
-1. **cost guard**：`shouldAbort(tracker, estimateRunwayImageCost(image_model_id))` を呼ぶ。true なら abort → Step 8 へジャンプ（生成済カットだけで合成試行）
-2. `reserve(tracker, estimateRunwayImageCost(image_model_id), { step: "generate_image", model: image_model_id, shot_index, provider: "runway" })`
-3. **pre-flight 検証（R-R19）**：`isValidRatio(ratio)` && `isKnownImageModel(image_model_id)` を確認（不正なら fail-fast）。OK なら `runway_generateImage({ model: image_model_id, promptText: visual_prompt, ratio, referenceImages })` → task
-4. `runway_getTask(task_id)` を poll（≥5s 間隔 + jitter、タイムアウト 10 分）→ `SUCCEEDED` で出力 URL 取得
-5. **即ダウンロード（R-R19、URL は 24h 失効）** → `output/<product>/<date>/.assets/<id>/shot-N.png`
-6. **画像視覚チェック**：PNG を Read tool で読み、`RUNWAY_IMAGE_CHECKLIST`（`lib/runway-checklist.ts`）で構造化判定
-7. 判定 OK なら `commit(tracker, task_id)`。NG なら `commit` した上で次の反復（最大 3 回 = 初回 + リトライ 2）
-8. 3 回 NG → そのカットをスキップ、`issues.json` に `image_validation_failed` 記録、次カットへ
-9. **エラー時**：HTTP 429 / `THROTTLED` は R-R8 のバックオフ、task `FAILED`（モデレーション等）はプロンプト微調整 1 回リトライ、それでも失敗なら `cancel(tracker)` してそのカットスキップ
+1. **pre-flight 検証（ループ前に 1 回、R-R19）**：`isValidRatio(image_ratio)` && `isKnownImageModel(image_model_id)` を確認（不正なら fail-fast）。`image_ratio` は画像生成エンドポイント用（動画と enum が異なりうる、R-R19.3）。
+2. **試行ループ（最大 3 回 = 初回 + リトライ 2）**。各試行で：
+   1. **cost guard**：`shouldAbort(tracker, estimateRunwayImageCost(image_model_id, { resolution: "720p" }))` が true → `tracker.aborted = true` を立て abort → Step 8 へジャンプ（生成済カットだけで合成試行）
+   2. `reserve(tracker, estimateRunwayImageCost(image_model_id, { resolution: "720p" }), { step: "generate_image", model: image_model_id, shot_index, provider: "runway" })`
+   3. `runway_generateImage({ model: image_model_id, promptText: visual_prompt, ratio: image_ratio, referenceImages })` → task → `runway_getTask` を poll（≥5s + jitter、10 分）
+   4. `SUCCEEDED`：**即DL（24h 失効、R-R19）** → `shot-N.png`。PNG を Read で `RUNWAY_IMAGE_CHECKLIST`（`lib/runway-checklist.ts`）判定
+      - OK → `commit(tracker, task_id)`、カット確定（ループ脱出、Step 6 へ）
+      - NG → 課金は発生済なので `commit(tracker, task_id)`、プロンプト微調整して次試行
+   5. エラー時：出力前の HTTP 429 / `THROTTLED` は **無課金 → `cancel(tracker)`** して R-R8 バックオフ後やり直し。task `FAILED`（モデレーション等）は `cancel(tracker)` 後プロンプト微調整して次試行
+3. 3 回とも NG → そのカットをスキップ、`issues.json` に `image_validation_failed` 記録、次カットへ
 
 ### Step 6. 動画生成ループ（カット単位、1 発主義） — R-R4, R-R5, R-R19
 
@@ -129,14 +131,16 @@ Runway は upload→URL 方式ではなく `referenceImages` 配列に直接渡�
 > **Runway image_to_video の `duration` は固定 enum（gen4_turbo / gen4.5 は `[5,10]`）。`ratio` は pixel 文字列（9:16 = `"720:1280"`）。両方 literal を厳守（R-R19）。**
 > seedance2 は 36 cr/s（5s≒$1.80）と高コスト。preference に `gen4_turbo`（5 cr/s, 5s=$0.25）を fallback として置く。
 
-1. **cost guard**：`shouldAbort(tracker, estimateRunwayVideoCost(video_model_id, shot.duration_sec))`
-2. `reserve(tracker, estimateRunwayVideoCost(video_model_id, shot.duration_sec), { step: "generate_video", model: video_model_id, shot_index, provider: "runway" })`
-3. **pre-flight 検証（R-R19）**：`isValidRatio(ratio)` && `isKnownVideoModel(video_model_id)` を確認（不正なら fail-fast）。`duration = roundDuration(shot.duration_sec)`（enum `[5,10]`、丸め発生時は `issues.json` に `duration_rounded` 記録）。`runway_generateVideo({ model: video_model_id, promptImage: <shot-N.png の URL/data URI>, promptText: motion_prompt, ratio, duration })` → task
-4. `runway_getTask(task_id)` を poll → `SUCCEEDED`
-5. **即ダウンロード（R-R19）** → `.assets/<id>/shot-N.mp4`
-6. **動画段階軽量検証**：致命的破綻のみ（途中切れ / 黒画面 / 1 秒未満）。NG なら：
-   - preference に次の動画モデルがあれば 1 回試行（R-R5）。それも NG なら mp4 を残さず `issues.json` に `video_fallback_to_image` を info 記録 → Step 8 で `<Img src=shot-N.png>` + `<ZoomIn>`
-7. `commit(tracker, task_id)`（成功時のみ）/ `cancel(tracker)`（致命破綻時のみ）
+`video_model_id`（preference 1st）と、fallback 候補（preference 2nd 以降）それぞれを「1 試行」とし、**各試行で guard → reserve → 呼び出し → commit/cancel を完結**させる（F5）：
+
+1. **pre-flight 検証（R-R19）**：`isValidRatio(ratio)` && `isKnownVideoModel(video_model_id)` を確認（不正なら fail-fast）
+2. **duration を先に確定（F6/R-R19.5）**：`const enum = allowedDurationsFor(video_model_id);` → `const duration = enum ? roundDuration(shot.duration_sec, enum) : shot.duration_sec;`（seedance2 等 enum=null は丸めない。丸めが起きたときだけ `issues.json` に `duration_rounded` 記録）
+3. **cost guard（確定後の duration で）**：`shouldAbort(tracker, estimateRunwayVideoCost(video_model_id, duration, { resolution: "720p" }))` が true → `tracker.aborted = true` を立て abort → Step 8 へ
+4. `reserve(tracker, estimateRunwayVideoCost(video_model_id, duration, { resolution: "720p" }), { step: "generate_video", model: video_model_id, shot_index, provider: "runway" })`
+5. `runway_generateVideo({ model: video_model_id, promptImage: <shot-N.png の URL/data URI>, promptText: motion_prompt, ratio, duration })` → task → `runway_getTask` を poll → `SUCCEEDED`
+6. **即ダウンロード（R-R19）** → `.assets/<id>/shot-N.mp4`。**動画段階軽量検証**（致命的破綻のみ：途中切れ / 黒画面 / 1 秒未満）
+   - OK → `commit(tracker, task_id)`、カット確定
+   - 破綻 / task `FAILED` → `cancel(tracker)`。preference に次の動画モデルがあれば **1〜5 を次モデルで 1 回繰り返す**（新たな guard/reserve を伴う、R-R5）。それも NG なら mp4 を残さず `issues.json` に `video_fallback_to_image` を info 記録 → Step 8 で `<Img src=shot-N.png>` + `<ZoomIn>`
 
 ### Step 7. ナレーション TTS 生成（ElevenLabs、Step 5/6 と並列実行可）— R-R15, R-R18
 
@@ -289,8 +293,8 @@ import { TaskflowRwReel1 } from "./_generated_/taskflow-rw-reel-1";
 1. **投稿コピー（R-R12）**：`<id>.md` を生成（フロントマター + フック + 本文 + ハッシュタグ 5 本、`variation_note` 先頭に `[category]` タグ）。
    - **lite モード時は加えて「## ナレーション台本」セクションを必ず付ける**（R-R18）。shot 別に：シーン要約 / 想定テキスト / 想定発話時間 / 強調キーワード / SSML 例 / 推奨 voice / 推奨音量。末尾に CapCut / Premiere 組み立て手順。欠落時 `MISSING_NARRATION_SCRIPT` で fail
    - `lib/manifest.ts` の `writeManifestAtomic` と同じ atomic 書き込みを使う
-2. **manifest.json**（atomic write）：`engine: "runway"`、`rules_version: "1.0.0"`、`runway_rules_version: "1.0.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に `category` / `viewpoint`（R-R14）/ `audio_mode`（R-R18）/ `bgm_embedded`（R-R18）/ `ratio`（R-R19）を追加
-3. **cost-report.json**（atomic write）：`toReport(tracker, {session...}, { notes })` の戻り値に `audio.loudness`（auto 時のみ実数値、lite 時 null）を足す。**成功 / 失敗 / abort いずれでも必ず出力**（R-R10）。`notes` には「コストは `lib/runway-cost.ts` の価格表に基づく **client 側推定値**で、Runway 課金と一致しない場合あり。最終額は Runway billing で確認」+ 使用モデル / 適用クレジット単価を必ず明記（R-R6）
+2. **manifest.json**（atomic write）：`engine: "runway"`、`rules_version: "1.0.0"`、`runway_rules_version: "1.0.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に `category` / **`viewpoint`**（R-R14。`variation_note` の 2 階層目 `[category/viewpoint]` から抽出した視点タグ。タグ無し時は当該カテゴリ「視点パレット」1st を文字列化。Step 3 の履歴チェックの参照源）/ `audio_mode`（R-R18）/ `bgm_embedded`（R-R18）/ `ratio`（R-R19）を追加
+3. **cost-report.json**（atomic write）：`toReport(tracker, {session...}, { notes })` の戻り値に `audio.loudness`（auto 時のみ実数値、lite 時 null）を足す。**成功 / 失敗 / abort いずれでも必ず出力**（R-R10。abort 時は `tracker.aborted=true` が立っているので `aborted_by_cost` が正しく真になる、F14）。`notes` には「コストは `lib/runway-cost.ts` の価格表（最終検証: `PRICING_TABLE_VERIFIED`）に基づく **client 側推定値**で、Runway 課金と一致しない場合あり。最終額は Runway billing で確認」+ 使用モデル / 適用クレジット単価を必ず明記（R-R6）
 4. **issues.json**：途中で記録した issue がある場合のみ書く。R-R17 read-only 違反、R-R18 違反、R-R19 の `duration_rounded` 等もここに記録
 5. **R-R17 read-only 監査**：Step 1 で記録した `assets_mtime_snapshot.json` を再チェック、変更されていれば `READ_ONLY_VIOLATION:{path}` を issues.json に記録（停止はしない）
 6. **中間ファイル**：`.assets/<id>/` は basic 残す（auto では `narration-N.mp3` + `.mastered.mp3` 両方）。`strict_mode: true` のみ raw を削除
@@ -312,6 +316,9 @@ cost:       $<spent> / $<limit> (<%>)  ※ client 側推定
 issues:     <件数>件
 詳細:       output/<name>/<date>/{manifest,issues,cost-report}.json
 ```
+
+`issues.json` に `READ_ONLY_VIOLATION`（R-R17）がある場合は、このサマリ末尾に **⚠️ 目立つ警告行**として
+`⚠️ READ_ONLY_VIOLATION: <path> が変更されました（git で復元してください）` を必ず出す（headless でも見落とさないため）。
 
 ## アンチパターン（やらないこと）
 
@@ -339,6 +346,7 @@ R-R に書かれた禁則に加えて：
 ```bash
 cd /path/to/adcraft && \
   unset ANTHROPIC_API_KEY && \
+  mkdir -p logs && \
   claude -p "create-advertisement-with-runway skill で taskflow の動画を1本生成して。承認不要、最後まで自律実行して。" \
     --permission-mode bypassPermissions \
     --max-turns 200 \
