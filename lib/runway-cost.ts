@@ -42,6 +42,10 @@ export const RUNWAY_VIDEO_CREDITS_PER_SEC: Record<string, Tiered> = {
   "veo3.1": { audio: 40, no_audio: 20 },
   "veo3.1_fast": { audio: 15, no_audio: 10 },
   happyhorse_1_0: { "720p": 15, "1080p": 30 },
+  // Kling 3.0（Kuaishou）: Runway 自社 Gen-4.5 超の品質 + seedance2 より大幅に安い。本 skill の動画 1st。
+  // ⚠️ model ID literal は **接続時に /mcp で実機確認**（"kling3.0_pro" 等は暫定。Runway の実 ID に合わせる）。
+  "kling3.0_pro": { audio: 17, no_audio: 12 },
+  "kling3.0_std": { audio: 13, no_audio: 9 },
 };
 
 /**
