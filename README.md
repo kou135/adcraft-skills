@@ -35,6 +35,10 @@ npx skills add remotion-dev/skills
 
 ## クイックスタート（30 分）
 
+> このクイックスタートは **Skill B（無料・MCP 不要）** の最短経路です。**Skill C / D（実写級・MCP 利用）** を使う場合は、
+> 先に [MCP セットアップ](#mcp-セットアップskill-c--d-利用時) を済ませてください。**Skill D（Runway）** は hosted MCP（clone/キー不要）で、
+> Runway の Web サブスク + `claude mcp add --transport http` → `/mcp` で OAuth するだけ（数分。詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)）。
+
 ### 1. クローン & 依存解決（2 分）
 
 ```bash
@@ -78,7 +82,7 @@ claude -p "create-advertisement skill で examples/product-sample のリール�
 
 ---
 
-## 提供される 3 つの Skill
+## 提供される 4 つの Skill
 
 ### `extract-product-ui`（Skill A）
 
@@ -114,6 +118,23 @@ Skill B の上位互換。**Higgsfield MCP（GPT Image 2 + Seedance 2.0 等）�
 - **不変ルール**：[`rules/create-advertisement-with-higgsfield-rules.md`](./rules/create-advertisement-with-higgsfield-rules.md)（v1.2.0 / R-H1〜R-H18）
 - **詳細**：[`skills/create-advertisement-with-higgsfield/SKILL.md`](./skills/create-advertisement-with-higgsfield/SKILL.md)
 
+### `create-advertisement-with-runway`（Skill D）
+
+Skill C と同型のパイプラインで、生成バックエンドを **Runway MCP（`gpt_image_2` / `gen4_image` + `seedance2` / `gen4_turbo` 等）と ElevenLabs MCP（TTS）** に差し替えたもの。lite / auto モード・コンテンツカテゴリ・voice-spec・symlink-safe レンダリングを Skill C から継承する。
+
+- **使用頻度**：中（Runway アカウントで実写級を作る時）
+- **接続**：**hosted MCP**（[`https://mcp.runwayml.com/mcp`](https://runwayml.com/mcp)、OAuth、clone/キー不要。Higgsfield と同型。初回 OAuth 1 回後は headless 可）
+- **課金**：**Runway の Web サブスク・クレジット枠**（Standard $15/月=625cr 等）。月次枠が実質ハードキャップなので暴走課金しにくい。hosted は per-call コストを返さないため消費は client 側でクレジット推定
+- **動画モデル既定**：**Kling 3.0 Pro**（Runway 自社 Gen-4.5 超の品質 + seedance2 の約 1/3 コスト。Standard で月2-3本）。最安は gen4_turbo、最安で高品質は kling3.0_std。seedance2 は Standard だと月1本未満になるため既定外。実 model ID と消費は接続テストで校正
+- **得意分野**：Runway native モデルの品質、seedance2/gpt_image_2 を Runway 経由で利用（Higgsfield 版とモデルファミリーを揃えた比較。backend/価格/呼出経路は異なる）
+- **必須前提**：
+  - Runway の Web サブスク（Standard 以上で全モデル + watermark 除去）+ hosted MCP 接続（OAuth）
+  - ElevenLabs（auto モード時のみ）+ ElevenLabs MCP 接続
+  - `products/<name>/assets/voice-spec/{category}.md` + `assets/reference/index.md` の整備
+- **Runway 固有の注意**：ratio は pixel 文字列 `"720:1280"`、model ID literal（`gen4.5` / `gen4_image`）、生成物 URL は 24h 失効（即DL）
+- **不変ルール**：[`rules/create-advertisement-with-runway-rules.md`](./rules/create-advertisement-with-runway-rules.md)（v1.0.0 / R-R1〜R-R19）
+- **詳細**：[`skills/create-advertisement-with-runway/SKILL.md`](./skills/create-advertisement-with-runway/SKILL.md) / 運用ガイド [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)
+
 ### どちらの skill を使う？
 
 | やりたいこと | 推奨 |
@@ -121,10 +142,12 @@ Skill B の上位互換。**Higgsfield MCP（GPT Image 2 + Seedance 2.0 等）�
 | まず試してみたい / 無料でやりたい | Skill B（`create-advertisement`） |
 | イラスト・タイポグラフィ系のリール | Skill B |
 | 実写級の映像 + ナレーションが欲しい | Skill C（`create-advertisement-with-higgsfield`） |
-| ペルソナの一人称モノローグ動画 | Skill C |
-| ブランド世界観をプロフェッショナルに表現 | Skill C |
+| ペルソナの一人称モノローグ動画 | Skill C / Skill D |
+| ブランド世界観をプロフェッショナルに表現 | Skill C / Skill D |
 | 量産（月 10 本以上） | Skill B（コスト 0）|
 | 試験運用 / 高品質少数本 | Skill C |
+| Runway アカウント / Developer API で実写級を作る | Skill D（`create-advertisement-with-runway`） |
+| Runway native（gen4_turbo / gen4_image）で安価に実写級 | Skill D |
 
 ---
 
@@ -157,12 +180,21 @@ create-advertisement skill で myproduct の動画を生成して
 adcraft/
 ├── skills/
 │   ├── extract-product-ui/SKILL.md
-│   └── create-advertisement/SKILL.md
-├── rules/create-advertisement-rules.md
+│   ├── create-advertisement/SKILL.md
+│   ├── create-advertisement-with-higgsfield/SKILL.md   # Skill C
+│   └── create-advertisement-with-runway/SKILL.md       # Skill D
+├── rules/
+│   ├── create-advertisement-rules.md
+│   ├── create-advertisement-with-higgsfield-rules.md   # R-H1〜R-H18
+│   └── create-advertisement-with-runway-rules.md       # R-R1〜R-R19
 ├── lib/
 │   ├── manifest.ts           # 出力メタデータの atomic write
 │   ├── validators.ts         # 視覚検証チェックリスト
-│   └── remotion-helpers.ts   # フォーマットプリセット
+│   ├── remotion-helpers.ts   # フォーマットプリセット
+│   ├── cost-tracker.ts       # コスト追跡（Skill C / D 共通）
+│   ├── higgsfield-checklist.ts  # Skill C 画像チェック
+│   ├── runway-cost.ts        # Skill D コスト計算（balance 非対応の代替）
+│   └── runway-checklist.ts   # Skill D 画像チェック
 ├── templates/
 │   ├── core.md.template
 │   ├── config.yaml.template
@@ -189,6 +221,7 @@ adcraft/
 ```bash
 cd /path/to/adcraft && \
   unset ANTHROPIC_API_KEY && \
+  mkdir -p logs && \
   claude -p "create-advertisement skill で全商品の動画を生成して。承認不要、最後まで自律実行して。" \
     --permission-mode bypassPermissions \
     --max-turns 200 \
@@ -265,11 +298,11 @@ products/<name>/
 
 ---
 
-## MCP セットアップ（Skill C 利用時）
+## MCP セットアップ（Skill C / D 利用時）
 
-Skill C は以下 2 つの MCP server に依存する。事前にセットアップが必要。
+Skill C は Higgsfield MCP + ElevenLabs MCP、Skill D は Runway MCP + ElevenLabs MCP に依存する。事前にセットアップが必要。
 
-### Higgsfield MCP
+### Higgsfield MCP（Skill C）
 
 ```bash
 claude mcp add higgsfield --type http --url https://mcp.higgsfield.ai/mcp
@@ -280,7 +313,22 @@ claude mcp add higgsfield --type http --url https://mcp.higgsfield.ai/mcp
 - **Starter $15/月**：image2 + Seedance 2.0 + kling 等すべて利用可、200 cred（kling 中心で月 ~5 リール）
 - ⚠️ **Seedance 2.0 は地域により制限される可能性あり**。日本ブロックが報告されている。失敗時は R-H5 により静止画 + ZoomIn に自動 fallback されるので致命的ではない
 
-### ElevenLabs MCP
+### Runway MCP（Skill D）
+
+**hosted MCP**（clone/キー不要、Higgsfield と同型）を前提とする。詳細は [`docs/runway-skill-guide.md`](./docs/runway-skill-guide.md)。
+
+```bash
+# 1. hosted MCP を追加（clone / API キー不要）
+claude mcp add --transport http runway https://mcp.runwayml.com/mcp
+# 2. Claude Code 内で OAuth（初回 1 回。以後トークン再利用で headless 可）
+#    /mcp を実行 → runway を選んでブラウザでサインイン
+# 3. 接続確認
+claude mcp list   # runway: https://mcp.runwayml.com/mcp (HTTP) - ✓ Connected
+```
+
+**課金**：**Runway の Web サブスク・クレジット枠**から消費（Higgsfield と同型）。Standard 以上で全モデル + watermark 除去。事前に Runway の Web プラン（Standard $15/月〜）が必要。
+
+### ElevenLabs MCP（Skill C / D 共通、auto モード時）
 
 ```bash
 # 1. ElevenLabs ダッシュボードで API キーを発行 (https://elevenlabs.io)
@@ -300,11 +348,12 @@ claude mcp add elevenlabs --type stdio --command "uvx elevenlabs-mcp" --env ELEV
 
 ```bash
 claude mcp list
-# higgsfield: ... ✓ Connected
-# elevenlabs: ... ✓ Connected
+# higgsfield: ... ✓ Connected   （Skill C）
+# runway:     ... ✓ Connected   （Skill D）
+# elevenlabs: ... ✓ Connected   （auto モード時）
 ```
 
-両方 `✓ Connected` になれば準備完了。Skill C が R-H1 で起動時に疎通確認する。
+利用する skill の MCP が `✓ Connected` になれば準備完了。Skill C は R-H1、Skill D は R-R1 で起動時に疎通確認する。
 
 ---
 

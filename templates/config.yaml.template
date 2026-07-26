@@ -87,3 +87,56 @@ higgsfield:
     required: false           # default OFF。true なら assets/bgm/*.mp3 を <Audio> で全 shot 通敷
     selection: "auto"         # auto / explicit。explicit なら下の explicit_file 指定
     # explicit_file: "energetic-01.mp3"
+
+# create-advertisement-with-runway skill 用設定 (Skill D)
+# 使わない場合は runway.enabled: false（既存 create-advertisement / higgsfield のみ動く）
+# 接続は hosted MCP（https://mcp.runwayml.com/mcp, OAuth）。clone / API キー不要。
+# 課金は Runway の Web サブスク・クレジット枠（Higgsfield と同型）。真のハードキャップ = 月次クレジット枠（Standard 625/月 等）。
+#
+# 動画の既定は Kling 3.0 Pro：Runway 自社 Gen-4.5 超の品質かつ seedance2(36/s) より大幅に安い（Standard で月2-3本）。
+#    最安重視なら kling3.0_std（9/s 無音）に、最高品質なら happyhorse_1_0 に、最安なら gen4_turbo(5/s, 品質一段下) に切替可。
+#    seedance2 は Standard だと 4カットで月次枠超過（180cr/5s）するため既定から外している。
+#    ⚠️ Kling/Veo/HappyHorse の **実 model ID literal は接続時に /mcp で確認**（下記は暫定）。
+#    ⚠️ web-app のモデル別クレジット消費は接続テストで実測校正すること。
+runway:
+  enabled: false              # true にすると Skill D が起動可能になる
+  credit_limit_per_run: 200   # 1run の推定消費クレジット上限（hosted の主単位）。月次枠を1runで食い潰さない安全弁
+  cost_limit_usd: 10.00       # USD 概算 proxy（cost_tracker 連携用）。credit_limit と先に到達した方で abort
+  cost_safety_margin: 0.95    # 実停止しきい値（limit * safety_margin で abort）
+  shots_per_video: 4          # 1動画あたりカット数
+  shot_duration_sec: 5        # gen4_turbo/gen4.5 の duration enum は [5,10]。
+                              # ⚠️ shots_per_video × shot_duration_sec を formats.reel.duration に一致させる
+                              #    （既定 4×5=20s。formats.reel.duration が 25s 等なら shot 構成を合わせること）
+  parallel: false             # MVP は直列固定
+  ratio: "720:1280"           # 動画(image_to_video)の 9:16 pixel 文字列（"9:16" は不可、R-R19）。
+                              # ※ 画像生成(gen4_image/gpt_image_2)は ratio enum が別系統の可能性。実 run で確認し、
+                              #    必要なら image.ratio を別途指定（R-R19.3）
+  image:
+    # model ID literal 厳守（gen4_image はアンダースコア、R-R19）
+    model_preference:
+      - "gpt_image_2"         # 1st: OpenAI（Higgsfield 版と同条件比較用、見積は worst case 41cr で計上）
+      - "gen4_image"          # fallback: Runway native（5cr@720p=$0.05、安価）
+    max_iterations_per_shot: 3  # 初回 + リトライ最大2回
+    # ratio: "1080:1920"      # （任意）画像生成専用 ratio。未指定なら上位 ratio を使う
+  video:
+    # 既定 = Kling 3.0 Pro（Gen-4.5 超品質 / 12cr·s 無音 = 5s 60cr）。fallback に安価な gen4_turbo。
+    # ※ 実 model ID は接続時 /mcp で確認（"kling3.0_pro" 等は暫定）。最安重視は kling3.0_std に。
+    model_preference:
+      - "kling3.0_pro"        # 1st: Runway 自社超え品質 + seedance2 より安い（無音 12cr/s）
+      - "gen4_turbo"          # fallback: Runway native、最安・安定（5cr/s、cost guard 安全弁）
+      # - "kling3.0_std"      # 代替: さらに安い（無音 9cr/s、月3本）
+      # - "happyhorse_1_0"    # 代替: 無音アリーナ最上位（720p 15cr/s）
+      # - "seedance2"         # 比較用（高コスト。Standard では月1本未満になる点に注意）
+    one_shot: true            # true: 動画失敗時は次候補→静止画fallback、同一モデルは再生成しない
+    fallback_to_static: true
+  tts:
+    # R-R18: TTS は opt-in。デフォルト false (lite モード) でナレーション台本のみ .md に生成
+    enabled: false            # default OFF（lite モード）。手動で narration を当てる前提
+    provider: "elevenlabs"
+    voice_id: ""              # ElevenLabs voice ID（enabled: true 時に必須）
+    model_id: "eleven_turbo_v2_5"
+  bgm:
+    # R-R18: BGM 自動埋込も opt-in
+    required: false           # default OFF。true なら assets/bgm/*.mp3 を <Audio> で全 shot 通敷
+    selection: "auto"         # auto / explicit
+    # explicit_file: "energetic-01.mp3"

@@ -43,7 +43,7 @@ export type CostHistoryEntry = {
   step: string;
   shot_index?: number;
   model: string;
-  provider?: "higgsfield" | "elevenlabs";
+  provider?: "higgsfield" | "elevenlabs" | "runway";
   request_id?: string;
   cost_usd: number;
   spent_running_usd: number;
@@ -62,7 +62,7 @@ export type CostTracker = {
     step: string;
     shot_index?: number;
     model: string;
-    provider?: "higgsfield" | "elevenlabs";
+    provider?: "higgsfield" | "elevenlabs" | "runway";
   } | null;
 };
 
@@ -88,7 +88,7 @@ export function reserve(
     step: string;
     model: string;
     shot_index?: number;
-    provider?: "higgsfield" | "elevenlabs";
+    provider?: "higgsfield" | "elevenlabs" | "runway";
   }
 ): void {
   if (t._pending !== null) {
@@ -147,11 +147,15 @@ export type CostReport = {
   session_ended_at: string;
   by_provider: Record<string, number>;
   history: CostHistoryEntry[];
+  // 自由記述メモ。Runway 版（balance tool 非対応）では spent_usd が client 側推定値である旨を
+  // ここに明記する（R-R6 / R-R10）。higgsfield 版では省略可。
+  notes?: string;
 };
 
 export function toReport(
   t: CostTracker,
-  session: { session_started_at: string; session_ended_at: string }
+  session: { session_started_at: string; session_ended_at: string },
+  opts?: { notes?: string }
 ): CostReport {
   const by_provider: Record<string, number> = {};
   for (const e of t.history) {
@@ -166,5 +170,6 @@ export function toReport(
     session_ended_at: session.session_ended_at,
     by_provider,
     history: t.history,
+    ...(opts?.notes ? { notes: opts.notes } : {}),
   };
 }
