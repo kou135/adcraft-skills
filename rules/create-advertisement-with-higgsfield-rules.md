@@ -1,12 +1,16 @@
 # create-advertisement-with-higgsfield Rules
 
-> **Skill `create-advertisement-with-higgsfield` の不変ルール（v1.2.0）**
+> **Skill `create-advertisement-with-higgsfield` の不変ルール（v1.3.0）**
 >
 > Skill は実行のたびに**まず**このファイルを読み込み、内容に従って動画生成を行う。
 > 既存 `create-advertisement-rules.md` の R1-R13 とは独立した R-H 系統を採用。
 > 本ファイルの version は `manifest.json` の `higgsfield_rules_version` に記録される。
 >
 > **変更履歴**：
+> - v1.3.0: lite モードのナレーション台本（`.md`）を**プレーンテキスト化**（R-H18）。
+>   SSML タグ・XML コードブロックを `.md` に出力しない（手動アフレコ用のため）。
+>   R-H15（SSML 強制）は auto モード専用に整理。違反検知に
+>   `LITE_MODE_VIOLATION:ssml_in_manual_script` を追加。
 > - v1.2.0: TTS / BGM の opt-in 化（R-H18）。`config.yaml.higgsfield.tts.enabled` (default `false`)
 >   と `bgm.required` (default `false`) で lite モード（手動 narration / BGM 付与前提）と
 >   auto モード（従来動作）を 1 つの skill で切替可能に。R-H14 / R-H15 / R-H16 は
@@ -223,11 +227,13 @@ TTS の音声品質と shot 尺整合性の構造的限界を踏まえ、**自�
 - **Step 7.5（ffmpeg post-master）**：スキップ
 - **Step 8（.tsx 生成）**：narration `<Audio>` を埋め込まない（テロップ `<TextOverlay>` は通常通り）
 - **Step 10（投稿コピー `.md`）**：従来内容に加え、**「## ナレーション台本」セクションを必ず追加**
-  - shot 別に：シーン要約 / 想定テキスト（日本語）/ 想定発話時間 / 強調キーワード / SSML 例 / 推奨 voice / 推奨音量
+  - shot 別に：シーン要約 / 想定テキスト（日本語）/ 想定発話時間 / 強調キーワード / 推奨 voice / 推奨音量
+  - **ナレーション文はプレーンテキストのみ**。SSML タグ（`<break>` / `<prosody>` 等）や
+    XML コードブロックは出力しない（手動アフレコ用の台本のため）
   - 末尾に「CapCut / Premiere 等での組み立て手順」を付ける
 - **manifest.json**：`items[].audio_mode: "manual"` を記録
 - **R-H14**（voice-spec 読み込み）：継続適用。voice-spec は **台本生成のガイド** として使う
-- **R-H15**（SSML 強制）：`.md` の SSML 例に対しては適用、TTS 呼び出しはしないので fail-fast 対象外
+- **R-H15**（SSML 強制）：lite モードでは**対象外**（TTS を呼ばず、`.md` 台本はプレーンテキストのみ）。auto モード時のみ適用
 - **R-H16**（ffmpeg post-master）：対象なし（TTS 出力が無いため）
 
 #### auto モード（`tts.enabled: true`）
@@ -263,6 +269,7 @@ shot あたり narration_chars ÷ chars/min × 60 ≤ shot_duration_sec × 0.85
 - `tts.enabled: false` にもかかわらず ElevenLabs MCP を呼んだ → `LITE_MODE_VIOLATION:tts_called`
 - `bgm.required: false` にもかかわらず `<Audio>` で BGM 埋め込み → `LITE_MODE_VIOLATION:bgm_embedded`
 - lite モードで `.md` に「## ナレーション台本」セクションが無い → `MISSING_NARRATION_SCRIPT`
+- lite モードの `.md` ナレーション台本に SSML タグ / XML コードブロックを出力した → `LITE_MODE_VIOLATION:ssml_in_manual_script`
 
 ## 受入基準
 
@@ -277,7 +284,7 @@ shot あたり narration_chars ÷ chars/min × 60 ≤ shot_duration_sec × 0.85
 9. **R-H15 準拠**（auto モードのみ）：narration スクリプトに `<break>` と `<prosody>` が最低 1 個ずつ含まれ、voice_settings が voice-spec から literal 取得されている
 10. **R-H16 準拠**（auto モードのみ）：`narration-N.mastered.mp3` が出力され、`.tsx` がそれを参照している。`cost-report.json` の `audio.loudness` に raw / mastered の LUFS が記録されている
 11. **R-H17 準拠**：voice-spec / reference の mtime が起動前後で同一（変更されていない）
-12. **R-H18 準拠**：`manifest.json.items[].audio_mode` が `"manual"` (lite) または `"auto"` (auto) で記録されている。lite モードのときは `.md` に「## ナレーション台本」セクションが含まれる
+12. **R-H18 準拠**：`manifest.json.items[].audio_mode` が `"manual"` (lite) または `"auto"` (auto) で記録されている。lite モードのときは `.md` に「## ナレーション台本」セクションが含まれる（ナレーション文はプレーンテキストのみ、SSML タグ・コードブロック無し）
 
 ## アンチパターン
 
@@ -300,4 +307,5 @@ shot あたり narration_chars ÷ chars/min × 60 ≤ shot_duration_sec × 0.85
 - ❌ `tts.enabled: false` のとき ElevenLabs MCP を呼ぶ（R-H18 lite モード違反）
 - ❌ `bgm.required: false` のとき .tsx に BGM `<Audio>` を埋め込む（R-H18 違反）
 - ❌ lite モードで `.md` のナレーション台本セクションを省略する（R-H18）
+- ❌ lite モードの `.md` ナレーション台本に SSML タグ / XML コードブロックを書く（プレーンテキストのみ、R-H18）
 - ❌ `tts.enabled: true` にもかかわらず `tts.voice_id` を空のまま実行する（auto モードで `TTS_VOICE_ID_MISSING`）
