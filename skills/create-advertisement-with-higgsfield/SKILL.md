@@ -332,12 +332,16 @@ import { TaskflowHfReel1 } from "./_generated_/taskflow-hf-reel-1";
 
 1. **投稿コピー（R-H12 = R13継承 + R-H18 拡張）**：`<id>.md` を生成。共通項目はフロントマター + フック + 本文 + ハッシュタグ 5 本（`variation_note` 先頭に `[category]` タグ、R-H14）。
    - **lite モード時（`tts.enabled: false`）は加えて「## ナレーション台本」セクションを必ず付ける**（R-H18）。shot 別に:
-     - シーン要約 / 想定テキスト（日本語）/ 想定発話時間 / 強調キーワード / SSML 例 / 推奨 voice / 推奨音量
-     - voice-spec/{category}.md の Pace Target / Prosody Patterns / Exemplar Phrases を参照
+     - シーン要約 / 想定テキスト（日本語）/ 想定発話時間 / 強調キーワード / 推奨 voice / 推奨音量
+     - **ナレーション文はプレーンテキストのみで書く**。SSML タグ（`<break>` / `<prosody>` 等）や
+       XML コードブロックは `.md` に出力しない（手動アフレコ用の台本のため。auto 化時の SSML は
+       Step 7 が voice-spec から都度組み立てる）
+     - voice-spec/{category}.md の Pace Target / Prosody Patterns / Exemplar Phrases は
+       **トーン・間の取り方の参考**として読む（タグ・XML は台本に転記しない）
    - 末尾に「CapCut / Premiere 等での組み立て手順」を 5 ステップ前後で
    - 欠落していたら `MISSING_NARRATION_SCRIPT` で fail
    - `lib/manifest.ts` の writeManifestAtomic と同じ atomic 書き込みを使う
-2. **manifest.json**（atomic write）：`engine: "higgsfield"`、`rules_version: "1.0.0"`、`higgsfield_rules_version: "1.2.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に以下を追加：
+2. **manifest.json**（atomic write）：`engine: "higgsfield"`、`rules_version: "1.0.0"`、`higgsfield_rules_version: "1.3.0"`、`cost.{limit_usd, spent_usd, aborted_by_cost}`、`items[].models_used` を含む。各 item に以下を追加：
    - `category`（R-H14）
    - **`viewpoint`** — variation_note の 2 階層目から抽出した視点タグ（例：`"observed"`）。タグ無し時は category パレットの 1st を文字列化して入れる。視点履歴チェックの参照源
    - **`audio_mode: "manual" | "auto"`**（R-H18、`tts.enabled` の値に応じて）
@@ -385,6 +389,7 @@ R-H に書かれた禁則に加えて：
 - ❌ `tts.enabled: false` で ElevenLabs MCP を呼ぶ（R-H18 lite モード違反）
 - ❌ `bgm.required: false` のとき .tsx に BGM `<Audio>` を埋め込む（R-H18 違反）
 - ❌ lite モードで `.md` のナレーション台本セクションを省略（R-H18）
+- ❌ lite モードの `.md` ナレーション台本に SSML タグ / XML コードブロックを出力する（プレーンテキストのみ、R-H18）
 - ❌ lite モードの動画に narration が無いことを伝えず、消費者に "音声付き完成品" と誤認させる出力
 - ❌ symlink 環境で Root.tsx から `output/<...>/<id>.tsx` を直接 import する（Webpack `resolve.symlinks` でモジュール解決が adcraft 外を指して fail。必ず `remotion/src/_generated_/<id>.tsx` 経由で import）
 - ❌ `_generated_/` ミラーコピーを忘れて Step 9 の render を `Module not found` で詰まらせる（Step 8 末尾の `cp` と `sed` 書き換えを skip しない）
